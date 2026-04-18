@@ -883,7 +883,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 #audioSpinningTab .audio-spinning-buttons {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.625rem;
 }
 
@@ -891,6 +891,29 @@ input[type="range"]::-webkit-slider-thumb {
   #audioSpinningTab .audio-spinning-buttons {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+#audioSpinningTab .audio-spinning-download-row {
+  margin-top: 0.25rem;
+}
+
+#audioSpinningTab .audio-spinning-download-row button {
+  width: 100%;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+#audioSpinningTab .audio-spinning-download-row button.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+
+#audioSpinningTab .audio-spinning-download-row button.secondary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 #audioSpinningTab .audio-spinning-buttons button {

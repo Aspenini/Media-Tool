@@ -1,5 +1,8 @@
 /** Orbital (HRTF) audio player: source orbits the listener in real time. */
 
+import { showNotification } from '../ui/notification.js';
+import { audioBufferToWavBlob } from '../utils/wav.js';
+
 type DistanceModel = 'inverse' | 'linear' | 'exponential';
 
 interface OrbitalDom {
@@ -8,7 +11,7 @@ interface OrbitalDom {
   playBtn: HTMLButtonElement;
   pauseBtn: HTMLButtonElement;
   stopBtn: HTMLButtonElement;
-  reverseBtn: HTMLButtonElement;
+  downloadBtn: HTMLButtonElement;
   statusEl: HTMLElement;
   speedEl: HTMLInputElement;
   radiusEl: HTMLInputElement;
@@ -41,7 +44,7 @@ export function initAudioSpinning(): void {
   const playBtn = root.querySelector<HTMLButtonElement>('#asPlayBtn');
   const pauseBtn = root.querySelector<HTMLButtonElement>('#asPauseBtn');
   const stopBtn = root.querySelector<HTMLButtonElement>('#asStopBtn');
-  const reverseBtn = root.querySelector<HTMLButtonElement>('#asReverseBtn');
+  const downloadBtn = root.querySelector<HTMLButtonElement>('#asDownload3d');
   const statusEl = root.querySelector<HTMLElement>('#asStatus');
 
   const speedEl = root.querySelector<HTMLInputElement>('#asSpeed');
@@ -70,7 +73,7 @@ export function initAudioSpinning(): void {
     !playBtn ||
     !pauseBtn ||
     !stopBtn ||
-    !reverseBtn ||
+    !downloadBtn ||
     !statusEl ||
     !speedEl ||
     !radiusEl ||
@@ -98,7 +101,7 @@ export function initAudioSpinning(): void {
     playBtn,
     pauseBtn,
     stopBtn,
-    reverseBtn,
+    downloadBtn,
     statusEl,
     speedEl,
     radiusEl,
@@ -128,10 +131,8 @@ function bindOrbital(dom: OrbitalDom): void {
 
   let isPlaying = false;
   let isPaused = false;
-  let reverse = false;
   let startTime = 0;
   let pausedOffset = 0;
-  let orbitBaseAngle = 0;
   let animFrame = 0;
   let lastMotionTime = 0;
   let lastX = 0;
@@ -142,7 +143,7 @@ function bindOrbital(dom: OrbitalDom): void {
     dom.radiusVal.textContent = Number(dom.radiusEl.value).toFixed(2);
     dom.heightVal.textContent = Number(dom.heightEl.value).toFixed(2);
     dom.dopplerVal.textContent = Number(dom.dopplerEl.value).toFixed(2);
-    dom.dirReadout.textContent = reverse ? 'Counterclockwise' : 'Clockwise';
+    dom.dirReadout.textContent = 'Clockwise';
     updateOrbitRing();
   }
 
@@ -189,31 +190,135 @@ function bindOrbital(dom: OrbitalDom): void {
       panner.positionX.value = 0;
       panner.positionY.value = 0;
       panner.positionZ.value = -1;
-      applyPannerSettings();
+      syncPannerFromUi(panner, audioCtx);
 
       panner.connect(gainNode);
       gainNode.connect(audioCtx.destination);
     }
   }
 
-  function applyPannerSettings(): void {
-    if (!panner || !audioCtx) return;
-    panner.distanceModel = dom.distanceModelEl.value as DistanceModel;
-    panner.refDistance = 1;
-    panner.maxDistance = 10000;
-    panner.rolloffFactor = 0.6;
-    panner.coneInnerAngle = 360;
-    panner.coneOuterAngle = 360;
-    panner.coneOuterGain = 1;
-    panner.orientationX.value = 0;
-    panner.orientationY.value = 0;
-    panner.orientationZ.value = 0;
-    const listener = audioCtx.listener as AudioListener & { dopplerFactor?: number; speedOfSound?: number };
+  function syncPannerFromUi(p: PannerNode, ctx: BaseAudioContext): void {
+    p.distanceModel = dom.distanceModelEl.value as DistanceModel;
+    p.refDistance = 1;
+    p.maxDistance = 10000;
+    p.rolloffFactor = 0.6;
+    p.coneInnerAngle = 360;
+    p.coneOuterAngle = 360;
+    p.coneOuterGain = 1;
+    p.orientationX.value = 0;
+    p.orientationY.value = 0;
+    p.orientationZ.value = 0;
+    const listener = ctx.listener as AudioListener & { dopplerFactor?: number; speedOfSound?: number };
     if ('dopplerFactor' in listener) {
       listener.dopplerFactor = Number(dom.dopplerEl.value);
     }
     if ('speedOfSound' in listener) {
       listener.speedOfSound = 343.3;
+    }
+  }
+
+  function applyPannerSettings(): void {
+    if (!panner || !audioCtx) return;
+    syncPannerFromUi(panner, audioCtx);
+  }
+
+  function scheduleOrbitPath(
+    panner: PannerNode,
+    duration: number,
+    speedRps: number,
+    radius: number,
+    height: number,
+  ): void {
+    const maxKf = 10000;
+    const desired = Math.ceil(duration * 72);
+    const n = Math.min(maxKf, Math.max(12, desired));
+    for (let i = 0; i <= n; i++) {
+      const t = (i / n) * duration;
+      const angle = t * speedRps * Math.PI * 2;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      if (i === 0) {
+        panner.positionX.setValueAtTime(x, t);
+        panner.positionY.setValueAtTime(height, t);
+        panner.positionZ.setValueAtTime(z, t);
+      } else {
+        panner.positionX.linearRampToValueAtTime(x, t);
+        panner.positionY.linearRampToValueAtTime(height, t);
+        panner.positionZ.linearRampToValueAtTime(z, t);
+      }
+    }
+  }
+
+  async function downloadSpatialWav(): Promise<void> {
+    if (!audioBuffer) {
+      showNotification('Load an audio file first.', 'error');
+      return;
+    }
+    const buffer = audioBuffer;
+    const duration = buffer.duration;
+    const length = buffer.length;
+    const sampleRate = buffer.sampleRate;
+    if (!Number.isFinite(duration) || duration <= 0 || length <= 0) {
+      showNotification('Invalid audio buffer.', 'error');
+      return;
+    }
+
+    dom.downloadBtn.disabled = true;
+    setStatus('Rendering binaural (3D) mix… This can take a while for long files.');
+    try {
+      const offline = new OfflineAudioContext(2, length, sampleRate);
+
+      offline.listener.positionX.value = 0;
+      offline.listener.positionY.value = 0;
+      offline.listener.positionZ.value = 0;
+      offline.listener.forwardX.value = 0;
+      offline.listener.forwardY.value = 0;
+      offline.listener.forwardZ.value = -1;
+      offline.listener.upX.value = 0;
+      offline.listener.upY.value = 1;
+      offline.listener.upZ.value = 0;
+
+      const offlinePanner = offline.createPanner();
+      offlinePanner.panningModel = 'HRTF';
+      syncPannerFromUi(offlinePanner, offline);
+
+      const speedRps = Number(dom.speedEl.value);
+      const radius = Number(dom.radiusEl.value);
+      const height = Number(dom.heightEl.value);
+
+      scheduleOrbitPath(offlinePanner, duration, speedRps, radius, height);
+
+      const src = offline.createBufferSource();
+      src.buffer = buffer;
+      src.connect(offlinePanner);
+      offlinePanner.connect(offline.destination);
+
+      src.start(0);
+      const rendered = await offline.startRendering();
+      const blob = audioBufferToWavBlob(rendered);
+
+      const raw = (dom.fileName.textContent || 'orbit-audio').trim();
+      const base =
+        raw === 'No file loaded.' ? 'orbit-audio' : raw.replace(/\.[^.]+$/, '') || 'orbit-audio';
+      const safe = base.replace(/[<>:"/\\|?*]+/g, '-').slice(0, 120) || 'orbit-audio';
+
+      const a = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = `${safe}_3d.wav`;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setStatus('Saved binaural WAV (stereo). Use headphones when playing it back.');
+    } catch (err) {
+      console.error(err);
+      showNotification('Could not render 3D audio. Try a shorter file or another format.', 'error');
+      setStatus('Render failed.');
+    } finally {
+      dom.downloadBtn.disabled = false;
     }
   }
 
@@ -290,8 +395,7 @@ function bindOrbital(dom: OrbitalDom): void {
     const speed = Number(dom.speedEl.value);
     const radius = Number(dom.radiusEl.value);
     const y = Number(dom.heightEl.value);
-    const dir = reverse ? -1 : 1;
-    const angle = orbitBaseAngle + dir * t * speed * Math.PI * 2;
+    const angle = t * speed * Math.PI * 2;
 
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius;
@@ -335,13 +439,13 @@ function bindOrbital(dom: OrbitalDom): void {
       audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
       dom.fileName.textContent = file.name;
       dom.playBtn.disabled = false;
-      dom.reverseBtn.disabled = false;
+      dom.downloadBtn.disabled = false;
       setStatus('Loaded. Press Play to start orbiting audio.');
     } catch (err) {
       console.error(err);
       audioBuffer = null;
       dom.playBtn.disabled = true;
-      dom.reverseBtn.disabled = true;
+      dom.downloadBtn.disabled = true;
       setStatus('Could not decode that audio file in this browser. Try MP3, WAV, M4A, or OGG.');
     }
   }
@@ -371,8 +475,7 @@ function bindOrbital(dom: OrbitalDom): void {
     setStatus('Orbiting audio is playing. Use headphones for the full effect.');
 
     lastMotionTime = audioCtx.currentTime;
-    const seedAngle =
-      orbitBaseAngle + (reverse ? -1 : 1) * pausedOffset * Number(dom.speedEl.value) * Math.PI * 2;
+    const seedAngle = pausedOffset * Number(dom.speedEl.value) * Math.PI * 2;
     const seedX = Math.cos(seedAngle) * Number(dom.radiusEl.value);
     const seedZ = Math.sin(seedAngle) * Number(dom.radiusEl.value);
     lastX = seedX;
@@ -405,7 +508,6 @@ function bindOrbital(dom: OrbitalDom): void {
     isPlaying = false;
     isPaused = false;
     pausedOffset = 0;
-    orbitBaseAngle = 0;
     stopSourceNode();
     cancelAnimationFrame(animFrame);
     dom.playBtn.disabled = !audioBuffer;
@@ -423,22 +525,8 @@ function bindOrbital(dom: OrbitalDom): void {
   });
   dom.pauseBtn.addEventListener('click', pausePlayback);
   dom.stopBtn.addEventListener('click', stopAll);
-  dom.reverseBtn.addEventListener('click', () => {
-    const speed = Number(dom.speedEl.value);
-    const currentAngle = orbitBaseAngle + (reverse ? -1 : 1) * getPlaybackOffset() * speed * Math.PI * 2;
-    orbitBaseAngle = currentAngle;
-    if (!isPaused) {
-      pausedOffset = 0;
-    }
-    reverse = !reverse;
-    dom.reverseBtn.textContent = `Reverse: ${reverse ? 'On' : 'Off'}`;
-    dom.dirReadout.textContent = reverse ? 'Counterclockwise' : 'Clockwise';
-
-    if (isPlaying && !isPaused && audioCtx) {
-      stopSourceNode();
-      createAndStartSource(getPlaybackOffset());
-      lastMotionTime = audioCtx.currentTime;
-    }
+  dom.downloadBtn.addEventListener('click', () => {
+    void downloadSpatialWav();
   });
 
   window.addEventListener('resize', () => {
