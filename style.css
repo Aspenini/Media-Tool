@@ -822,7 +822,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--primary);
 }
 
-/* —— Audio Spinning (orbital HRTF player) —— */
+/* —— Audio Spinning (orbital HRTF) —— */
 #audioSpinningTab .audio-spinning-sub {
   color: var(--text-secondary);
   line-height: 1.5;
@@ -1058,6 +1058,229 @@ input[type="range"]::-webkit-slider-thumb {
 #audioSpinningTab .audio-spinning-stat-v {
   font-weight: 700;
   font-size: 1.125rem;
+}
+
+/* Audio Hamburger — simultaneous stack (order = height), minimal UI */
+#audioHamburgerTab .ah-tool {
+  margin-top: 1.5rem;
+}
+
+#audioHamburgerTab .ah-intro {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  max-width: 52rem;
+  margin-bottom: 1.25rem;
+}
+
+#audioHamburgerTab .ah-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  #audioHamburgerTab .ah-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+#audioHamburgerTab .ah-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 1rem 1.1rem;
+}
+
+#audioHamburgerTab .ah-panel-viz {
+  padding: 1rem;
+}
+
+#audioHamburgerTab .ah-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+#audioHamburgerTab .ah-row label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+#audioHamburgerTab .ah-value {
+  font-size: 0.875rem;
+  color: var(--text);
+  min-width: 3.5rem;
+}
+
+#audioHamburgerTab .ah-hint {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.75rem;
+}
+
+#audioHamburgerTab .ah-transport {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0.5rem;
+}
+
+#audioHamburgerTab .ah-status {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0.35rem 0 0;
+}
+
+#audioHamburgerTab .ah-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 280px;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+  background: radial-gradient(circle at 50% 45%, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 1));
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#audioHamburgerTab .ah-cross {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+#audioHamburgerTab .ah-cross-h {
+  height: 1px;
+  width: 100%;
+  top: 50%;
+  left: 0;
+  transform: translateY(-0.5px);
+}
+
+#audioHamburgerTab .ah-cross-v {
+  width: 1px;
+  height: 100%;
+  top: 0;
+  left: 50%;
+  transform: translateX(-0.5px);
+}
+
+#audioHamburgerTab .ah-listener {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--text);
+  box-shadow: 0 0 0 10px rgba(241, 245, 249, 0.08);
+  z-index: 2;
+}
+
+#audioHamburgerTab .ah-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+#audioHamburgerTab .ah-dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+#audioHamburgerTab .ah-viz-caption {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0.5rem 0 0;
+}
+
+#audioHamburgerTab .ah-queue-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 0.75rem;
+  max-height: 220px;
+  overflow: auto;
+}
+
+#audioHamburgerTab .ah-queue-head {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+#audioHamburgerTab .ah-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+#audioHamburgerTab .ah-queue-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--background-elevated);
+  border: 1px solid var(--border);
+  font-size: 0.8125rem;
+  cursor: default;
+}
+
+#audioHamburgerTab .ah-queue-item.drag-over {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.25);
+}
+
+#audioHamburgerTab .ah-drag {
+  cursor: grab;
+  color: var(--text-secondary);
+  user-select: none;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.15rem 0.25rem;
+  touch-action: none;
+}
+
+#audioHamburgerTab .ah-drag:active {
+  cursor: grabbing;
+}
+
+#audioHamburgerTab .ah-queue-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+#audioHamburgerTab .ah-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+#audioHamburgerTab .ah-queue-actions button {
+  padding: 0.25rem 0.45rem;
+  font-size: 0.75rem;
+  min-width: 0;
 }
 
 /* Credits crawl generator */

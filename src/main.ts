@@ -9,6 +9,7 @@ import { initBrainfuck } from './tools/brainfuck.js';
 import { initPagnai } from './tools/pagnai.js';
 import { initQrcode } from './tools/qrcode.js';
 import { initAudioSpinning } from './tools/audioSpinning.js';
+import { initAudioHamburger } from './tools/audioHamburger.js';
 import { initCreditsCrawl } from './tools/creditsCrawl.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -22,5 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initPagnai();
   initQrcode();
   initAudioSpinning();
+  initAudioHamburger();
   initCreditsCrawl();
 });

@@ -61,6 +61,7 @@
         <button class="mobile-menu-item tab-button" data-tab="brainfuckTab">Brainfuck</button>
         <button class="mobile-menu-item tab-button" data-tab="pagnaiTab">PAGNAI</button>
         <button class="mobile-menu-item tab-button" data-tab="audioSpinningTab">Audio Spinning</button>
+        <button class="mobile-menu-item tab-button" data-tab="audioHamburgerTab">Audio Hamburger</button>
         <button class="mobile-menu-item tab-button" data-tab="creditsCrawlTab">Credits Crawl</button>
       </div>
     </div>
@@ -75,6 +76,7 @@
       <button class="tab-button" data-tab="brainfuckTab">Brainfuck</button>
       <button class="tab-button" data-tab="pagnaiTab">PAGNAI</button>
       <button class="tab-button" data-tab="audioSpinningTab">Audio Spinning</button>
+      <button class="tab-button" data-tab="audioHamburgerTab">Audio Hamburger</button>
       <button class="tab-button" data-tab="creditsCrawlTab">Credits Crawl</button>
     </div>
 
@@ -462,6 +464,53 @@
               <div class="audio-spinning-stat"><div class="audio-spinning-stat-k">X / Z</div><div class="audio-spinning-stat-v" id="asXzReadout">0.00 / 0.00</div></div>
               <div class="audio-spinning-stat"><div class="audio-spinning-stat-k">Playback</div><div class="audio-spinning-stat-v" id="asPlaybackReadout">Stopped</div></div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="audioHamburgerTab" class="tabcontent">
+      <div class="ah-tool">
+        <h2>Audio Hamburger</h2>
+        <p class="ah-intro">Drop in several tracks, <strong>drag to reorder</strong>, then hit Play. Every file plays <strong>at the same time</strong>, each from its own spot in 3D space. <strong>List order = height in the stack</strong> (top of the list = lowest; bottom = highest). Headphones recommended—nothing leaves your machine.</p>
+
+        <div class="ah-layout">
+          <div class="ah-panel ah-panel-main">
+            <div class="ah-row">
+              <label for="ahFileInput">Add audio</label>
+              <input id="ahFileInput" type="file" accept="audio/*" multiple />
+            </div>
+            <p class="ah-hint">Drag rows to change order and the vertical spread. Remove with ×.</p>
+
+            <div class="ah-queue-wrap">
+              <div class="ah-queue-head">Stack <span id="ahQueueCount">0</span> tracks</div>
+              <ul id="ahQueueList" class="ah-queue-list" aria-label="Stack order, top to bottom"></ul>
+              <p id="ahQueueEmpty" class="ah-hint">No files yet.</p>
+            </div>
+
+            <div class="ah-row">
+              <label for="ahVolume">Master volume</label>
+              <input id="ahVolume" type="range" min="0" max="2" value="0.85" step="0.01" />
+              <div class="ah-value"><span id="ahVolumeVal">85</span>%</div>
+            </div>
+
+            <div class="ah-transport">
+              <button type="button" id="ahPlayBtn" disabled>Play all</button>
+              <button type="button" id="ahPauseBtn" class="secondary" disabled>Pause</button>
+              <button type="button" id="ahStopBtn" class="secondary" disabled>Stop</button>
+              <button type="button" id="ahDownloadBtn" class="secondary" disabled>Download mix (WAV)</button>
+            </div>
+            <p id="ahStatus" class="ah-status">Add at least two files for the full “burger” effect, or one for a centered layer.</p>
+          </div>
+
+          <div class="ah-panel ah-panel-viz">
+            <div class="ah-stage" id="ahStage">
+              <div class="ah-cross ah-cross-h" aria-hidden="true"></div>
+              <div class="ah-cross ah-cross-v" aria-hidden="true"></div>
+              <div class="ah-listener" title="You (listener)"></div>
+              <div id="ahDots" class="ah-dots" aria-hidden="true"></div>
+            </div>
+            <p class="ah-viz-caption">Each dot is one layer in the stack (after you press Play).</p>
           </div>
         </div>
       </div>
