@@ -9,6 +9,7 @@ import { initBrainfuck } from './tools/brainfuck.js';
 import { initPagnai } from './tools/pagnai.js';
 import { initQrcode } from './tools/qrcode.js';
 import { initAudioSpinning } from './tools/audioSpinning.js';
+import { initCreditsCrawl } from './tools/creditsCrawl.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
@@ -21,4 +22,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initPagnai();
   initQrcode();
   initAudioSpinning();
+  initCreditsCrawl();
 });

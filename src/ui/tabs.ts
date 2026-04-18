@@ -10,6 +10,7 @@ const HASH_TO_TAB: Record<string, string> = {
   'brainfuck-encoder': 'brainfuckTab',
   pagnai: 'pagnaiTab',
   'audio-spinning': 'audioSpinningTab',
+  'credits-crawl': 'creditsCrawlTab',
 };
 
 function tabIdToHash(tabId: string): string {

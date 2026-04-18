@@ -22,6 +22,13 @@ interface OrbitalDom {
   radiusVal: HTMLElement;
   heightVal: HTMLElement;
   dopplerVal: HTMLElement;
+  echoEl: HTMLInputElement;
+  echoVal: HTMLElement;
+  echoDelayEl: HTMLInputElement;
+  echoDelayVal: HTMLElement;
+  echoLinkEl: HTMLInputElement;
+  volumeEl: HTMLInputElement;
+  volumeVal: HTMLElement;
   sourceDot: HTMLElement;
   orbitRing: SVGCircleElement;
   stage: HTMLElement;
@@ -57,6 +64,13 @@ export function initAudioSpinning(): void {
   const radiusVal = root.querySelector<HTMLElement>('#asRadiusVal');
   const heightVal = root.querySelector<HTMLElement>('#asHeightVal');
   const dopplerVal = root.querySelector<HTMLElement>('#asDopplerVal');
+  const echoEl = root.querySelector<HTMLInputElement>('#asEcho');
+  const echoVal = root.querySelector<HTMLElement>('#asEchoVal');
+  const echoDelayEl = root.querySelector<HTMLInputElement>('#asEchoDelay');
+  const echoDelayVal = root.querySelector<HTMLElement>('#asEchoDelayVal');
+  const echoLinkEl = root.querySelector<HTMLInputElement>('#asEchoLinkDistance');
+  const volumeEl = root.querySelector<HTMLInputElement>('#asVolume');
+  const volumeVal = root.querySelector<HTMLElement>('#asVolumeVal');
 
   const sourceDot = root.querySelector<HTMLElement>('#asSourceDot');
   const orbitRing = root.querySelector<SVGCircleElement>('#asOrbitRing');
@@ -84,6 +98,13 @@ export function initAudioSpinning(): void {
     !radiusVal ||
     !heightVal ||
     !dopplerVal ||
+    !echoEl ||
+    !echoVal ||
+    !echoDelayEl ||
+    !echoDelayVal ||
+    !echoLinkEl ||
+    !volumeEl ||
+    !volumeVal ||
     !sourceDot ||
     !orbitRing ||
     !stage ||
@@ -112,6 +133,13 @@ export function initAudioSpinning(): void {
     radiusVal,
     heightVal,
     dopplerVal,
+    echoEl,
+    echoVal,
+    echoDelayEl,
+    echoDelayVal,
+    echoLinkEl,
+    volumeEl,
+    volumeVal,
     sourceDot,
     orbitRing,
     stage,
@@ -126,6 +154,9 @@ function bindOrbital(dom: OrbitalDom): void {
   let audioCtx: AudioContext | null = null;
   let panner: PannerNode | null = null;
   let gainNode: GainNode | null = null;
+  let dryGain: GainNode | null = null;
+  let wetGain: GainNode | null = null;
+  let delayNode: DelayNode | null = null;
   let sourceNode: AudioBufferSourceNode | null = null;
   let audioBuffer: AudioBuffer | null = null;
 
@@ -138,11 +169,45 @@ function bindOrbital(dom: OrbitalDom): void {
   let lastX = 0;
   let lastZ = 0;
 
+  function readEchoDelaySec(): number {
+    if (dom.echoLinkEl.checked) {
+      const radius = Number(dom.radiusEl.value);
+      const rMin = Number(dom.radiusEl.min);
+      const rMax = Number(dom.radiusEl.max);
+      const span = rMax - rMin || 1;
+      const u = Math.min(1, Math.max(0, (radius - rMin) / span));
+      return 0.03 + u * 0.52;
+    }
+    return Number(dom.echoDelayEl.value) / 1000;
+  }
+
+  function applyEchoToNodes(del: DelayNode, dry: GainNode, wet: GainNode, master: GainNode): void {
+    const mix = Math.min(1, Math.max(0, Number(dom.echoEl.value)));
+    const delaySec = Math.min(0.99, Math.max(0.001, readEchoDelaySec()));
+    del.delayTime.value = delaySec;
+    dry.gain.value = 1 - mix;
+    wet.gain.value = mix;
+    master.gain.value = Math.min(2, Math.max(0, Number(dom.volumeEl.value)));
+  }
+
+  function syncEchoAndVolume(): void {
+    if (!delayNode || !dryGain || !wetGain || !gainNode) return;
+    applyEchoToNodes(delayNode, dryGain, wetGain, gainNode);
+  }
+
   function updateDisplayedValues(): void {
     dom.speedVal.textContent = Number(dom.speedEl.value).toFixed(2);
     dom.radiusVal.textContent = Number(dom.radiusEl.value).toFixed(2);
     dom.heightVal.textContent = Number(dom.heightEl.value).toFixed(2);
     dom.dopplerVal.textContent = Number(dom.dopplerEl.value).toFixed(2);
+    dom.echoVal.textContent = Number(dom.echoEl.value).toFixed(2);
+    dom.volumeVal.textContent = String(Math.round(Number(dom.volumeEl.value) * 100));
+    dom.echoDelayEl.disabled = dom.echoLinkEl.checked;
+    if (dom.echoLinkEl.checked) {
+      dom.echoDelayVal.textContent = `${(readEchoDelaySec() * 1000).toFixed(0)} (from radius)`;
+    } else {
+      dom.echoDelayVal.textContent = dom.echoDelayEl.value;
+    }
     dom.dirReadout.textContent = 'Clockwise';
     updateOrbitRing();
   }
@@ -153,15 +218,32 @@ function bindOrbital(dom: OrbitalDom): void {
     dom.orbitRing.setAttribute('r', visualR.toFixed(2));
   }
 
-  [dom.speedEl, dom.radiusEl, dom.heightEl, dom.dopplerEl, dom.distanceModelEl].forEach((el) => {
+  const controlInputs: (HTMLInputElement | HTMLSelectElement)[] = [
+    dom.speedEl,
+    dom.radiusEl,
+    dom.heightEl,
+    dom.dopplerEl,
+    dom.distanceModelEl,
+    dom.echoEl,
+    dom.echoDelayEl,
+    dom.volumeEl,
+  ];
+  controlInputs.forEach((el) => {
     el.addEventListener('input', () => {
       updateDisplayedValues();
       if (panner) applyPannerSettings();
+      syncEchoAndVolume();
     });
     el.addEventListener('change', () => {
       updateDisplayedValues();
       if (panner) applyPannerSettings();
+      syncEchoAndVolume();
     });
+  });
+
+  dom.echoLinkEl.addEventListener('change', () => {
+    updateDisplayedValues();
+    syncEchoAndVolume();
   });
 
   function setStatus(text: string): void {
@@ -185,6 +267,9 @@ function bindOrbital(dom: OrbitalDom): void {
 
       panner = audioCtx.createPanner();
       gainNode = audioCtx.createGain();
+      dryGain = audioCtx.createGain();
+      wetGain = audioCtx.createGain();
+      delayNode = audioCtx.createDelay(1.0);
 
       panner.panningModel = 'HRTF';
       panner.positionX.value = 0;
@@ -192,8 +277,14 @@ function bindOrbital(dom: OrbitalDom): void {
       panner.positionZ.value = -1;
       syncPannerFromUi(panner, audioCtx);
 
-      panner.connect(gainNode);
+      panner.connect(dryGain);
+      dryGain.connect(gainNode);
+      panner.connect(delayNode);
+      delayNode.connect(wetGain);
+      wetGain.connect(gainNode);
       gainNode.connect(audioCtx.destination);
+
+      applyEchoToNodes(delayNode, dryGain, wetGain, gainNode);
     }
   }
 
@@ -288,10 +379,21 @@ function bindOrbital(dom: OrbitalDom): void {
 
       scheduleOrbitPath(offlinePanner, duration, speedRps, radius, height);
 
+      const dry = offline.createGain();
+      const wet = offline.createGain();
+      const del = offline.createDelay(1.0);
+      const master = offline.createGain();
+      applyEchoToNodes(del, dry, wet, master);
+
       const src = offline.createBufferSource();
       src.buffer = buffer;
       src.connect(offlinePanner);
-      offlinePanner.connect(offline.destination);
+      offlinePanner.connect(dry);
+      dry.connect(master);
+      offlinePanner.connect(del);
+      del.connect(wet);
+      wet.connect(master);
+      master.connect(offline.destination);
 
       src.start(0);
       const rendered = await offline.startRendering();
@@ -440,6 +542,7 @@ function bindOrbital(dom: OrbitalDom): void {
       dom.fileName.textContent = file.name;
       dom.playBtn.disabled = false;
       dom.downloadBtn.disabled = false;
+      syncEchoAndVolume();
       setStatus('Loaded. Press Play to start orbiting audio.');
     } catch (err) {
       console.error(err);
@@ -534,5 +637,6 @@ function bindOrbital(dom: OrbitalDom): void {
   });
 
   updateDisplayedValues();
+  syncEchoAndVolume();
   renderSourceDot(0, -Number(dom.radiusEl.value), Number(dom.radiusEl.value));
 }
