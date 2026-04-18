@@ -60,6 +60,7 @@
         <button class="mobile-menu-item tab-button" data-tab="qrcodeTab">QR Code</button>
         <button class="mobile-menu-item tab-button" data-tab="brainfuckTab">Brainfuck Encoder</button>
         <button class="mobile-menu-item tab-button" data-tab="pagnaiTab">PAGNAI</button>
+        <button class="mobile-menu-item tab-button" data-tab="audioSpinningTab">Audio Spinning</button>
       </div>
     </div>
 
@@ -72,6 +73,7 @@
       <button class="tab-button" data-tab="qrcodeTab">QR Code</button>
       <button class="tab-button" data-tab="brainfuckTab">Brainfuck Encoder</button>
       <button class="tab-button" data-tab="pagnaiTab">PAGNAI</button>
+      <button class="tab-button" data-tab="audioSpinningTab">Audio Spinning</button>
     </div>
 
     <div id="scalerTab" class="tabcontent active" style="display:block;">
@@ -343,6 +345,86 @@
       <div id="pagnaiPreview" class="audio-preview" style="display:none">
         <audio id="pagnaiAudio" controls></audio>
         <a id="pagnaiDownload" class="download-link" download="pagnai_audio.wav" style="display: inline-block; margin-top: 1rem;">Download Generated Audio</a>
+      </div>
+    </div>
+
+    <div id="audioSpinningTab" class="tabcontent">
+      <div class="audio-spinning">
+        <h2>Audio Spinning</h2>
+        <p class="audio-spinning-sub">Upload an audio file, press play, and the sound source will orbit around your head in real time using the Web Audio API. Best with headphones. Fully local. No upload.</p>
+
+        <div class="audio-spinning-grid">
+          <div class="audio-spinning-panel audio-spinning-controls">
+            <div class="audio-spinning-row">
+              <label for="asFileInput">Audio file</label>
+              <input id="asFileInput" type="file" accept="audio/*" />
+              <div id="asFileName" class="audio-spinning-value">No file loaded.</div>
+            </div>
+
+            <div class="audio-spinning-row">
+              <label for="asSpeed">Orbit speed</label>
+              <input id="asSpeed" type="range" min="0.05" max="3" value="0.6" step="0.01" />
+              <div class="audio-spinning-value"><span id="asSpeedVal">0.60</span> rotations per second</div>
+            </div>
+
+            <div class="audio-spinning-row">
+              <label for="asRadius">Orbit radius</label>
+              <input id="asRadius" type="range" min="0.05" max="6" value="1.8" step="0.01" />
+              <div class="audio-spinning-value"><span id="asRadiusVal">1.80</span> meters from listener</div>
+            </div>
+
+            <div class="audio-spinning-row">
+              <label for="asHeight">Height</label>
+              <input id="asHeight" type="range" min="-2" max="2" value="0" step="0.01" />
+              <div class="audio-spinning-value"><span id="asHeightVal">0.00</span> meters</div>
+            </div>
+
+            <div class="audio-spinning-row">
+              <label for="asDoppler">Doppler intensity</label>
+              <input id="asDoppler" type="range" min="0" max="4" value="1" step="0.01" />
+              <div class="audio-spinning-value"><span id="asDopplerVal">1.00</span></div>
+            </div>
+
+            <div class="audio-spinning-row">
+              <label for="asDistanceModel">Distance model</label>
+              <select id="asDistanceModel">
+                <option value="inverse" selected>inverse</option>
+                <option value="linear">linear</option>
+                <option value="exponential">exponential</option>
+              </select>
+              <p class="audio-spinning-tiny">Inverse usually sounds the most natural for this.</p>
+            </div>
+
+            <div class="audio-spinning-buttons">
+              <button type="button" id="asPlayBtn" disabled>Play</button>
+              <button type="button" id="asPauseBtn" class="secondary" disabled>Pause</button>
+              <button type="button" id="asStopBtn" class="secondary" disabled>Stop</button>
+              <button type="button" id="asReverseBtn" class="secondary" disabled>Reverse: Off</button>
+            </div>
+
+            <p id="asStatus" class="audio-spinning-status">Load a file to begin.</p>
+            <p class="audio-spinning-tiny">This works locally in modern browsers. Some browsers require you to press Play after selecting a file so audio can start from a user gesture.</p>
+          </div>
+
+          <div class="audio-spinning-panel audio-spinning-viz">
+            <div class="audio-spinning-stage" id="asStage">
+              <div class="audio-spinning-crosshair-h" aria-hidden="true"></div>
+              <div class="audio-spinning-crosshair-v" aria-hidden="true"></div>
+              <svg class="audio-spinning-trail" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                <circle id="asOrbitRing" cx="50" cy="50" r="34" fill="none" stroke="rgba(96,165,250,0.35)" stroke-width="0.6" stroke-dasharray="2 2" />
+              </svg>
+              <div class="audio-spinning-listener" title="Listener"></div>
+              <div class="audio-spinning-source" id="asSourceDot" title="Sound source"></div>
+            </div>
+
+            <div class="audio-spinning-readout">
+              <div class="audio-spinning-stat"><div class="audio-spinning-stat-k">Angle</div><div class="audio-spinning-stat-v" id="asAngleReadout">0°</div></div>
+              <div class="audio-spinning-stat"><div class="audio-spinning-stat-k">Direction</div><div class="audio-spinning-stat-v" id="asDirReadout">Clockwise</div></div>
+              <div class="audio-spinning-stat"><div class="audio-spinning-stat-k">X / Z</div><div class="audio-spinning-stat-v" id="asXzReadout">0.00 / 0.00</div></div>
+              <div class="audio-spinning-stat"><div class="audio-spinning-stat-k">Playback</div><div class="audio-spinning-stat-v" id="asPlaybackReadout">Stopped</div></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

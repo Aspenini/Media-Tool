@@ -9,6 +9,7 @@ const HASH_TO_TAB: Record<string, string> = {
   'qr-code': 'qrcodeTab',
   'brainfuck-encoder': 'brainfuckTab',
   pagnai: 'pagnaiTab',
+  'audio-spinning': 'audioSpinningTab',
 };
 
 function tabIdToHash(tabId: string): string {

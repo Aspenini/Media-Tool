@@ -822,6 +822,211 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--primary);
 }
 
+/* —— Audio Spinning (orbital HRTF player) —— */
+#audioSpinningTab .audio-spinning-sub {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: -0.5rem 0 1.5rem;
+  max-width: 52rem;
+}
+
+#audioSpinningTab .audio-spinning-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 860px) {
+  #audioSpinningTab .audio-spinning-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+#audioSpinningTab .audio-spinning-panel {
+  background: var(--background-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+}
+
+#audioSpinningTab .audio-spinning-controls {
+  display: grid;
+  gap: 1rem;
+}
+
+#audioSpinningTab .audio-spinning-row {
+  display: grid;
+  gap: 0.5rem;
+}
+
+#audioSpinningTab .audio-spinning-row label {
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin: 0;
+}
+
+#audioSpinningTab .audio-spinning-row input[type='range'],
+#audioSpinningTab .audio-spinning-row select {
+  width: 100%;
+}
+
+#audioSpinningTab .audio-spinning-row input[type='range'] {
+  accent-color: var(--primary);
+}
+
+#audioSpinningTab .audio-spinning-value {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+#audioSpinningTab .audio-spinning-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.625rem;
+}
+
+@media (max-width: 520px) {
+  #audioSpinningTab .audio-spinning-buttons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+#audioSpinningTab .audio-spinning-buttons button {
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+#audioSpinningTab .audio-spinning-buttons button.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+
+#audioSpinningTab .audio-spinning-buttons button.secondary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+#audioSpinningTab .audio-spinning-status {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  min-height: 1.2em;
+  margin: 0;
+}
+
+#audioSpinningTab .audio-spinning-tiny {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+#audioSpinningTab .audio-spinning-viz {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+#audioSpinningTab .audio-spinning-stage {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  border-radius: var(--radius-xl);
+  position: relative;
+  background:
+    radial-gradient(circle at center, rgba(80, 120, 255, 0.18) 0 12%, transparent 13%),
+    radial-gradient(circle at center, transparent 0 24%, rgba(255, 255, 255, 0.08) 24.5% 25%, transparent 25.5%),
+    radial-gradient(circle at center, transparent 0 39%, rgba(255, 255, 255, 0.08) 39.5% 40%, transparent 40.5%),
+    radial-gradient(circle at center, transparent 0 54%, rgba(255, 255, 255, 0.08) 54.5% 55%, transparent 55.5%),
+    radial-gradient(circle at center, #111827 0%, #0b1220 60%, #060a11 100%);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#audioSpinningTab .audio-spinning-crosshair-h,
+#audioSpinningTab .audio-spinning-crosshair-v {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#audioSpinningTab .audio-spinning-crosshair-h {
+  height: 1px;
+  width: 100%;
+  top: 50%;
+  left: 0;
+  transform: translateY(-0.5px);
+}
+
+#audioSpinningTab .audio-spinning-crosshair-v {
+  width: 1px;
+  height: 100%;
+  top: 0;
+  left: 50%;
+  transform: translateX(-0.5px);
+}
+
+#audioSpinningTab .audio-spinning-listener,
+#audioSpinningTab .audio-spinning-source {
+  position: absolute;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+}
+
+#audioSpinningTab .audio-spinning-listener {
+  width: 22px;
+  height: 22px;
+  left: 50%;
+  top: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 10px rgba(241, 245, 249, 0.08);
+  z-index: 2;
+}
+
+#audioSpinningTab .audio-spinning-source {
+  width: 20px;
+  height: 20px;
+  left: 50%;
+  top: 16%;
+  background: #60a5fa;
+  box-shadow: 0 0 24px rgba(96, 165, 250, 0.8);
+  z-index: 3;
+}
+
+#audioSpinningTab .audio-spinning-trail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#audioSpinningTab .audio-spinning-readout {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.625rem;
+}
+
+#audioSpinningTab .audio-spinning-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+
+#audioSpinningTab .audio-spinning-stat-k {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#audioSpinningTab .audio-spinning-stat-v {
+  font-weight: 700;
+  font-size: 1.125rem;
+}
+
 @media (max-width: 768px) {
   .main-content {
     padding: 1.5rem 1rem;
