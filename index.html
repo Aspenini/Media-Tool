@@ -472,7 +472,7 @@
     <div id="audioHamburgerTab" class="tabcontent">
       <div class="ah-tool">
         <h2>Audio Hamburger</h2>
-        <p class="ah-intro">Drop in several tracks, <strong>drag to reorder</strong>, then hit Play. Every file plays <strong>at the same time</strong>, each from its own spot in 3D space. <strong>List order = height in the stack</strong> (top of the list = lowest; bottom = highest). Headphones recommended—nothing leaves your machine.</p>
+        <p class="ah-intro">Add several tracks, then <strong>drag each dot on the map</strong> around your head (center) to set direction and distance. The wedge on the dot shows <strong>front</strong>. With <strong>exactly two</strong> files you can use <strong>One per side</strong> for hard left/right and <strong>Swap sides</strong> instead of dragging. Every file can play <strong>at the same time</strong> in 3D space—use the list to remove files or reorder how overlapping dots stack. <strong>Scroll while hovering a dot</strong> to raise or lower it. Headphones recommended—nothing leaves your machine.</p>
 
         <div class="ah-layout">
           <div class="ah-panel ah-panel-main">
@@ -480,13 +480,24 @@
               <label for="ahFileInput">Add audio</label>
               <input id="ahFileInput" type="file" accept="audio/*" multiple />
             </div>
-            <p class="ah-hint">Drag rows to change order and the vertical spread. Remove with ×.</p>
+            <p class="ah-hint">Drag <strong>⋮⋮</strong> to reorder the list (draw order on the map). Remove with ×.</p>
 
             <div class="ah-queue-wrap">
               <div class="ah-queue-head">Stack <span id="ahQueueCount">0</span> tracks</div>
               <ul id="ahQueueList" class="ah-queue-list" aria-label="Stack order, top to bottom"></ul>
               <p id="ahQueueEmpty" class="ah-hint">No files yet.</p>
             </div>
+
+            <div id="ahTwoTrackControls" class="ah-two-track" hidden>
+              <label class="ah-two-track-label">
+                <input id="ahOnePerSide" type="checkbox" />
+                <span>One per side</span>
+              </label>
+              <button type="button" id="ahSwapSides" class="secondary" disabled>Swap sides</button>
+            </div>
+            <p id="ahTwoTrackHint" class="ah-hint ah-two-track-hint" hidden>
+              With exactly two files: lock one track hard left and one hard right, or turn off to drag freely on the map.
+            </p>
 
             <div class="ah-row">
               <label for="ahVolume">Master volume</label>
@@ -504,13 +515,16 @@
           </div>
 
           <div class="ah-panel ah-panel-viz">
-            <div class="ah-stage" id="ahStage">
+            <div class="ah-stage" id="ahStage" role="img" aria-label="Spatial map: drag colored dots around the listener to pan each track in 3D.">
               <div class="ah-cross ah-cross-h" aria-hidden="true"></div>
               <div class="ah-cross ah-cross-v" aria-hidden="true"></div>
-              <div class="ah-listener" title="You (listener)"></div>
-              <div id="ahDots" class="ah-dots" aria-hidden="true"></div>
+              <div class="ah-front-axis" aria-hidden="true"></div>
+              <div class="ah-listener" title="You — flat side shows forward (where front is)">
+                <span class="ah-listener-face" aria-hidden="true"></span>
+              </div>
+              <div id="ahDots" class="ah-dots"></div>
             </div>
-            <p class="ah-viz-caption">Each dot is one layer in the stack (after you press Play).</p>
+            <p class="ah-viz-caption">Each dot is one track. Drag around the center for direction and distance; scroll on a dot for height.</p>
           </div>
         </div>
       </div>

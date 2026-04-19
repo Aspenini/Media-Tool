@@ -1,18 +1,37 @@
 /**
  * Audio Hamburger — play every track at once in 3D space.
- * List order sets the vertical stack (top = lowest, bottom = highest) plus a mild front arc.
+ * Each track has a draggable position around the listener (azimuth, distance, height).
  */
 
 import { showNotification } from '../ui/notification.js';
 import { audioBufferToWavBlob } from '../utils/wav.js';
 
-type QueuedTrack = { id: string; file: File; name: string; buffer: AudioBuffer | null };
+type QueuedTrack = {
+  id: string;
+  file: File;
+  name: string;
+  buffer: AudioBuffer | null;
+  /** radians; 0 = straight ahead (-Z in Web Audio listener space) */
+  panAzimuth: number;
+  panDistance: number;
+  panHeight: number;
+};
 
 type ActiveLayer = {
   id: string;
   source: AudioBufferSourceNode;
   panner: PannerNode;
 };
+
+const MIN_PAN_DIST = 0.82;
+const MAX_PAN_DIST = 4.48;
+const MIN_PAN_HEIGHT = -2.35;
+const MAX_PAN_HEIGHT = 2.5;
+const WORLD_R_FOR_SCALE = 2.5;
+/** Hard left / right when “one per side” is enabled (exactly two tracks). */
+const ONE_PER_SIDE_DIST = 2.35;
+const AZIMUTH_LEFT = -Math.PI / 2;
+const AZIMUTH_RIGHT = Math.PI / 2;
 
 function getAudioContextClass(): typeof AudioContext {
   return window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -22,22 +41,19 @@ function newTrackId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** Top of list = lowest Y; bottom = highest. Mild XZ arc in front of listener. */
-function stackPosition(index: number, n: number): { x: number; y: number; z: number } {
-  if (n <= 0) return { x: 0, y: 0, z: -2.2 };
-  const yLo = -2.4;
-  const yHi = 2.4;
-  const y = n === 1 ? 0 : yLo + (index / (n - 1)) * (yHi - yLo);
-  const spread = Math.min(1.1, 0.35 + n * 0.12);
-  const r = 2.15;
-  if (n === 1) {
-    return { x: 0, y: 0, z: -r };
-  }
-  const u = index / (n - 1);
-  const theta = (u - 0.5) * spread;
-  const x = Math.sin(theta) * r;
-  const z = -Math.cos(theta) * r;
-  return { x, y, z };
+function worldFromPan(azimuth: number, distance: number, height: number): { x: number; y: number; z: number } {
+  const x = Math.sin(azimuth) * distance;
+  const z = -Math.cos(azimuth) * distance;
+  return { x, y: height, z };
+}
+
+/** Spread new tracks in a shallow arc in front of the listener. */
+function defaultPanForIndex(index: number, total: number): Pick<QueuedTrack, 'panAzimuth' | 'panDistance' | 'panHeight'> {
+  if (total <= 1) return { panAzimuth: 0, panDistance: 2.2, panHeight: 0 };
+  const spread = Math.PI * 0.72;
+  const u = index / (total - 1);
+  const panAzimuth = (u - 0.5) * spread;
+  return { panAzimuth, panDistance: 2.2, panHeight: 0 };
 }
 
 function dotHue(index: number, n: number): string {
@@ -62,6 +78,10 @@ export function initAudioHamburger(): void {
   const volumeVal = root.querySelector<HTMLElement>('#ahVolumeVal');
   const stage = root.querySelector<HTMLElement>('#ahStage');
   const dotsEl = root.querySelector<HTMLElement>('#ahDots');
+  const twoTrackRow = root.querySelector<HTMLElement>('#ahTwoTrackControls');
+  const onePerSideCheckbox = root.querySelector<HTMLInputElement>('#ahOnePerSide');
+  const swapSidesBtn = root.querySelector<HTMLButtonElement>('#ahSwapSides');
+  const twoTrackHint = root.querySelector<HTMLElement>('#ahTwoTrackHint');
 
   if (
     !fileInput ||
@@ -76,7 +96,11 @@ export function initAudioHamburger(): void {
     !volumeEl ||
     !volumeVal ||
     !stage ||
-    !dotsEl
+    !dotsEl ||
+    !twoTrackRow ||
+    !onePerSideCheckbox ||
+    !swapSidesBtn ||
+    !twoTrackHint
   ) {
     return;
   }
@@ -95,6 +119,10 @@ export function initAudioHamburger(): void {
     volumeVal,
     stage,
     dotsEl,
+    twoTrackRow,
+    onePerSideCheckbox,
+    swapSidesBtn,
+    twoTrackHint,
   };
 
   const queue: QueuedTrack[] = [];
@@ -106,6 +134,11 @@ export function initAudioHamburger(): void {
   let endedCount = 0;
   let dragSourceId: string | null = null;
   let exportInProgress = false;
+  let draggingTrackId: string | null = null;
+  /** With exactly two tracks: lock first/second to L/R on the map. */
+  let onePerSideMode = false;
+  /** When one per side: flip which list row maps to which ear. */
+  let twoTrackSwapped = false;
 
   function setStatus(text: string): void {
     el.statusEl.textContent = text;
@@ -157,49 +190,162 @@ export function initAudioHamburger(): void {
     p.orientationZ.value = 0;
   }
 
-  function applyStackPositions(): void {
-    const n = queue.length;
-    queue.forEach((track, index) => {
+  function getStageLayout(): { cx: number; cy: number; scale: number } | null {
+    const rect = el.stage.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const maxR = Math.min(rect.width, rect.height) * 0.36;
+    const scale = (maxR / WORLD_R_FOR_SCALE) * 0.92;
+    return { cx: rect.width / 2, cy: rect.height / 2, scale };
+  }
+
+  function applyOnePerSideLayout(): void {
+    if (queue.length !== 2 || !onePerSideMode) return;
+    const [t0, t1] = queue;
+    if (twoTrackSwapped) {
+      t0!.panAzimuth = AZIMUTH_RIGHT;
+      t0!.panDistance = ONE_PER_SIDE_DIST;
+      t0!.panHeight = 0;
+      t1!.panAzimuth = AZIMUTH_LEFT;
+      t1!.panDistance = ONE_PER_SIDE_DIST;
+      t1!.panHeight = 0;
+    } else {
+      t0!.panAzimuth = AZIMUTH_LEFT;
+      t0!.panDistance = ONE_PER_SIDE_DIST;
+      t0!.panHeight = 0;
+      t1!.panAzimuth = AZIMUTH_RIGHT;
+      t1!.panDistance = ONE_PER_SIDE_DIST;
+      t1!.panHeight = 0;
+    }
+    renderDots();
+    syncPannersFromQueue();
+  }
+
+  function syncTwoTrackUi(): void {
+    const two = queue.length === 2;
+    el.twoTrackRow.hidden = !two;
+    el.twoTrackHint.hidden = !two;
+    if (!two) {
+      onePerSideMode = false;
+      twoTrackSwapped = false;
+      el.onePerSideCheckbox.checked = false;
+      el.swapSidesBtn.disabled = true;
+      el.stage.classList.remove('ah-stage-sides-locked');
+      return;
+    }
+    el.onePerSideCheckbox.checked = onePerSideMode;
+    el.swapSidesBtn.disabled = !onePerSideMode;
+    el.stage.classList.toggle('ah-stage-sides-locked', onePerSideMode);
+  }
+
+  function syncPannersFromQueue(): void {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    for (const track of queue) {
       const layer = activeLayers.find((l) => l.id === track.id);
-      if (!layer || !audioCtx) return;
-      const { x, y, z } = stackPosition(index, n);
-      const now = audioCtx.currentTime;
+      if (!layer) continue;
+      const { x, y, z } = worldFromPan(track.panAzimuth, track.panDistance, track.panHeight);
       layer.panner.positionX.setValueAtTime(x, now);
       layer.panner.positionY.setValueAtTime(y, now);
       layer.panner.positionZ.setValueAtTime(z, now);
-    });
-    renderDots();
+    }
   }
 
-  function renderDots(): void {
-    el.dotsEl.innerHTML = '';
+  function applyPointerToTrackPan(track: QueuedTrack, clientX: number, clientY: number): void {
     const rect = el.stage.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
+    const layout = getStageLayout();
+    if (!layout) return;
+    const { cx, cy, scale } = layout;
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const yHold = track.panHeight;
+    const x = (px - cx) / scale;
+    const z = (py - cy) / scale + yHold * 0.22;
+    let dist = Math.hypot(x, z);
+    if (dist < MIN_PAN_DIST) dist = MIN_PAN_DIST;
+    if (dist > MAX_PAN_DIST) dist = MAX_PAN_DIST;
+    track.panAzimuth = Math.atan2(x, -z);
+    track.panDistance = dist;
+  }
+
+  /** Reconcile dot elements with queue so pointer capture survives moves (no full innerHTML wipe). */
+  function renderDots(): void {
+    const layout = getStageLayout();
+    if (!layout) return;
+    if (!queue.length) {
+      el.dotsEl.innerHTML = '';
+      return;
+    }
+    const { cx, cy, scale } = layout;
     const n = queue.length;
-    const maxR = Math.min(rect.width, rect.height) * 0.36;
-    const worldR = 2.5;
+    const existing = new Map<string, HTMLElement>();
+    for (const node of el.dotsEl.querySelectorAll<HTMLElement>('.ah-dot')) {
+      if (node.dataset.id) existing.set(node.dataset.id, node);
+    }
 
     queue.forEach((track, index) => {
-      const { x, y, z } = stackPosition(index, n);
-      const dot = document.createElement('div');
-      dot.className = 'ah-dot';
-      dot.title = track.name;
+      let dot = existing.get(track.id);
+      if (!dot) {
+        dot = document.createElement('div');
+        dot.className = 'ah-dot';
+        dot.dataset.id = track.id;
+        dot.tabIndex = 0;
+        el.dotsEl.appendChild(dot);
+      }
+      existing.delete(track.id);
+      dot.title = `${track.name} — drag for direction & distance; wheel for height`;
       dot.style.background = dotHue(index, n);
-      const cx = rect.width / 2;
-      const cy = rect.height / 2;
-      const scale = (maxR / worldR) * 0.92;
+      dot.style.zIndex = String(10 + index);
+      const { x, y, z } = worldFromPan(track.panAzimuth, track.panDistance, track.panHeight);
       const px = cx + x * scale;
       const py = cy + z * scale - y * (scale * 0.22);
       dot.style.left = `${px}px`;
       dot.style.top = `${py}px`;
       const depth = -z;
-      const glow = 12 + depth * 4;
+      const glow = 10 + Math.min(22, Math.max(0, depth) * 3.5);
       dot.style.boxShadow = `0 0 ${glow}px rgba(0, 0, 0, 0.5)`;
-      el.dotsEl.appendChild(dot);
     });
+    existing.forEach((node) => node.remove());
+  }
+
+  function refreshSpatialVisual(): void {
+    renderDots();
+  }
+
+  function onStageDragMove(ev: PointerEvent): void {
+    if (!draggingTrackId) return;
+    const track = queue.find((q) => q.id === draggingTrackId);
+    if (!track) return;
+    applyPointerToTrackPan(track, ev.clientX, ev.clientY);
+    renderDots();
+    syncPannersFromQueue();
+  }
+
+  function onStageDragEnd(ev: PointerEvent): void {
+    document.removeEventListener('pointermove', onStageDragMove);
+    document.removeEventListener('pointerup', onStageDragEnd);
+    document.removeEventListener('pointercancel', onStageDragEnd);
+    const id = draggingTrackId;
+    draggingTrackId = null;
+    if (id) {
+      const dot = el.dotsEl.querySelector<HTMLElement>(`.ah-dot[data-id="${id}"]`);
+      if (dot?.hasPointerCapture(ev.pointerId)) {
+        dot.releasePointerCapture(ev.pointerId);
+      }
+      dot?.classList.remove('ah-dot-dragging');
+    }
+    renderDots();
+  }
+
+  function abortDotsDrag(): void {
+    document.removeEventListener('pointermove', onStageDragMove);
+    document.removeEventListener('pointerup', onStageDragEnd);
+    document.removeEventListener('pointercancel', onStageDragEnd);
+    draggingTrackId = null;
+    el.dotsEl.querySelectorAll('.ah-dot.ah-dot-dragging').forEach((n) => n.classList.remove('ah-dot-dragging'));
   }
 
   function teardownGraph(): void {
+    abortDotsDrag();
     sessionActive = false;
     for (const layer of activeLayers) {
       layer.source.onended = null;
@@ -241,6 +387,7 @@ export function initAudioHamburger(): void {
   }
 
   function stopPlayback(resetContext: boolean): void {
+    abortDotsDrag();
     sessionActive = false;
     for (const layer of activeLayers) {
       layer.source.onended = null;
@@ -300,7 +447,7 @@ export function initAudioHamburger(): void {
     exportInProgress = true;
     updateTransport();
     el.downloadBtn.textContent = 'Rendering…';
-    setStatus('Rendering binaural mix (offline). Long stacks take longer…');
+    setStatus('Rendering binaural mix (offline). Large mixes take longer…');
 
     try {
       for (const t of queue) {
@@ -343,17 +490,15 @@ export function initAudioHamburger(): void {
       offline.listener.upZ.value = 0;
 
       const master = offline.createGain();
-      const nQ = queue.length;
       const nPlay = playable.length;
       master.gain.value = Number(el.volumeEl.value) * perLayerGainScalar(nPlay);
       master.connect(offline.destination);
 
-      for (let qi = 0; qi < queue.length; qi++) {
-        const track = queue[qi]!;
+      for (const track of queue) {
         if (!track.buffer) continue;
         const panner = offline.createPanner();
         configurePanner(panner);
-        const { x, y, z } = stackPosition(qi, nQ);
+        const { x, y, z } = worldFromPan(track.panAzimuth, track.panDistance, track.panHeight);
         panner.positionX.value = x;
         panner.positionY.value = y;
         panner.positionZ.value = z;
@@ -379,7 +524,7 @@ export function initAudioHamburger(): void {
       a.remove();
       URL.revokeObjectURL(url);
 
-      setStatus('Saved stereo binaural WAV (same stack as the list). Use headphones when playing it back.');
+      setStatus('Saved stereo binaural WAV (same positions as on the map). Use headphones when playing it back.');
     } catch (err) {
       console.error(err);
       showNotification('Could not render the mix. Try shorter files or fewer layers.', 'error');
@@ -412,7 +557,7 @@ export function initAudioHamburger(): void {
       grip.className = 'ah-drag';
       grip.draggable = true;
       grip.textContent = '⋮⋮';
-      grip.title = 'Drag to reorder';
+      grip.title = 'Drag to reorder list (draw order on map)';
       grip.setAttribute('aria-hidden', 'true');
 
       const name = document.createElement('span');
@@ -437,8 +582,11 @@ export function initAudioHamburger(): void {
       el.queueList.appendChild(li);
     });
 
-    if (sessionActive || queue.length) {
-      renderDots();
+    syncTwoTrackUi();
+    if (queue.length === 2 && onePerSideMode) {
+      applyOnePerSideLayout();
+    } else {
+      refreshSpatialVisual();
     }
     updateTransport();
   }
@@ -503,7 +651,7 @@ export function initAudioHamburger(): void {
       src.buffer = buf;
       src.connect(panner);
       panner.connect(masterGain!);
-      const { x, y, z } = stackPosition(queue.indexOf(track), queue.length);
+      const { x, y, z } = worldFromPan(track.panAzimuth, track.panDistance, track.panHeight);
       panner.positionX.value = x;
       panner.positionY.value = y;
       panner.positionZ.value = z;
@@ -514,7 +662,7 @@ export function initAudioHamburger(): void {
 
     syncVolumeDisplay();
     setStatus(n === 1 ? 'Playing one layer.' : `Playing ${n} layers at once.`);
-    renderDots();
+    refreshSpatialVisual();
     updateTransport();
   }
 
@@ -528,16 +676,49 @@ export function initAudioHamburger(): void {
   el.volumeEl.addEventListener('input', syncVolumeDisplay);
   el.volumeEl.addEventListener('change', syncVolumeDisplay);
 
+  el.onePerSideCheckbox.addEventListener('change', () => {
+    onePerSideMode = el.onePerSideCheckbox.checked;
+    el.swapSidesBtn.disabled = queue.length !== 2 || !onePerSideMode;
+    el.stage.classList.toggle('ah-stage-sides-locked', onePerSideMode && queue.length === 2);
+    if (onePerSideMode && queue.length === 2) {
+      applyOnePerSideLayout();
+      setStatus('One per side: first list row → left ear, second → right. Swap sides to flip.');
+    } else {
+      setStatus('Free placement: drag dots on the map.');
+    }
+  });
+
+  el.swapSidesBtn.addEventListener('click', () => {
+    if (queue.length !== 2 || !onePerSideMode) return;
+    twoTrackSwapped = !twoTrackSwapped;
+    applyOnePerSideLayout();
+    setStatus(
+      twoTrackSwapped
+        ? 'Swapped: first row → right, second → left.'
+        : 'First row → left, second → right.',
+    );
+  });
+
   el.fileInput.addEventListener('change', async () => {
     const files = Array.from(el.fileInput.files || []);
     el.fileInput.value = '';
     if (!files.length) return;
     ensureAudioContext();
-    for (const file of files) {
-      queue.push({ id: newTrackId(), file, name: file.name, buffer: null });
+    const baseLen = queue.length;
+    const addCount = files.length;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]!;
+      const pan = defaultPanForIndex(baseLen + i, baseLen + addCount);
+      queue.push({
+        id: newTrackId(),
+        file,
+        name: file.name,
+        buffer: null,
+        ...pan,
+      });
     }
     renderQueueUi();
-    setStatus(`${queue.length} track(s). Press Play all to stack them in space.`);
+    setStatus(`${queue.length} track(s). Drag dots on the map to place each sound, then Play all.`);
   });
 
   el.queueList.addEventListener('click', (e) => {
@@ -577,10 +758,10 @@ export function initAudioHamburger(): void {
     queue.splice(idx, 1);
     renderQueueUi();
     if (sessionActive && audioCtx?.state === 'running') {
-      applyStackPositions();
+      syncPannersFromQueue();
       syncVolumeDisplay();
     }
-    setStatus(queue.length ? `${queue.length} track(s) in stack.` : 'Add audio files to begin.');
+    setStatus(queue.length ? `${queue.length} track(s).` : 'Add audio files to begin.');
     updateTransport();
   });
 
@@ -639,10 +820,10 @@ export function initAudioHamburger(): void {
     dragSourceId = null;
     renderQueueUi();
     if (sessionActive) {
-      applyStackPositions();
+      syncPannersFromQueue();
       syncVolumeDisplay();
     }
-    setStatus('Order updated — heights follow the list.');
+    setStatus('List order updated (which dot draws on top when they overlap).');
   });
 
   el.playBtn.addEventListener('click', () => {
@@ -655,7 +836,7 @@ export function initAudioHamburger(): void {
 
   el.stopBtn.addEventListener('click', () => {
     stopPlayback(true);
-    setStatus(queue.length ? 'Stopped. Press Play all to run the stack again.' : 'Add audio files to begin.');
+    setStatus(queue.length ? 'Stopped. Press Play all again from the same map layout.' : 'Add audio files to begin.');
     renderQueueUi();
     updateTransport();
   });
@@ -664,11 +845,47 @@ export function initAudioHamburger(): void {
     void downloadMixWav();
   });
 
+  el.dotsEl.addEventListener(
+    'wheel',
+    (e) => {
+      if (onePerSideMode && queue.length === 2) return;
+      const dot = (e.target as HTMLElement).closest('.ah-dot') as HTMLElement | null;
+      if (!dot?.dataset.id) return;
+      e.preventDefault();
+      const track = queue.find((q) => q.id === dot.dataset.id);
+      if (!track) return;
+      const step = e.deltaY < 0 ? 0.16 : -0.16;
+      track.panHeight = Math.min(MAX_PAN_HEIGHT, Math.max(MIN_PAN_HEIGHT, track.panHeight + step));
+      renderDots();
+      syncPannersFromQueue();
+    },
+    { passive: false },
+  );
+
+  el.dotsEl.addEventListener('pointerdown', (e) => {
+    if (onePerSideMode && queue.length === 2) return;
+    if (draggingTrackId) return;
+    const dot = (e.target as HTMLElement).closest('.ah-dot') as HTMLElement | null;
+    if (!dot?.dataset.id) return;
+    const track = queue.find((q) => q.id === dot.dataset.id);
+    if (!track) return;
+    e.preventDefault();
+    draggingTrackId = track.id;
+    dot.classList.add('ah-dot-dragging');
+    dot.setPointerCapture(e.pointerId);
+    applyPointerToTrackPan(track, e.clientX, e.clientY);
+    renderDots();
+    syncPannersFromQueue();
+    document.addEventListener('pointermove', onStageDragMove);
+    document.addEventListener('pointerup', onStageDragEnd);
+    document.addEventListener('pointercancel', onStageDragEnd);
+  });
+
   window.addEventListener('resize', () => {
-    if (queue.length) renderDots();
+    if (queue.length) refreshSpatialVisual();
   });
 
   syncVolumeDisplay();
   renderQueueUi();
-  setStatus('Add at least two files for the full “burger” effect, or one for a centered layer.');
+  setStatus('Add tracks, drag each dot around your head on the map, then press Play all.');
 }
