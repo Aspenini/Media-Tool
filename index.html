@@ -63,6 +63,7 @@
         <button class="mobile-menu-item tab-button" data-tab="audioSpinningTab">Audio Spinning</button>
         <button class="mobile-menu-item tab-button" data-tab="audioHamburgerTab">Audio Hamburger</button>
         <button class="mobile-menu-item tab-button" data-tab="creditsCrawlTab">Credits Crawl</button>
+        <button class="mobile-menu-item tab-button" data-tab="viewer360Tab">360 Image Viewer</button>
       </div>
     </div>
 
@@ -78,6 +79,7 @@
       <button class="tab-button" data-tab="audioSpinningTab">Audio Spinning</button>
       <button class="tab-button" data-tab="audioHamburgerTab">Audio Hamburger</button>
       <button class="tab-button" data-tab="creditsCrawlTab">Credits Crawl</button>
+      <button class="tab-button" data-tab="viewer360Tab">360 Image Viewer</button>
     </div>
 
     <div id="scalerTab" class="tabcontent active" style="display:block;">
@@ -528,6 +530,25 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="viewer360Tab" class="tabcontent">
+      <h2>360° Image Viewer</h2>
+      <p>Upload a panorama and look around by dragging (or touch). Everything runs in your browser.</p>
+      <div class="input-group input-group-stack">
+        <label for="viewer360Input">Image file</label>
+        <input type="file" id="viewer360Input" accept="image/*">
+      </div>
+      <div class="input-group input-group-stack">
+        <label for="viewer360Projection">Projection</label>
+        <select id="viewer360Projection">
+          <option value="equirectangular" selected>Equirectangular (360° sphere)</option>
+          <option value="cylindrical">Cylindrical (360° horizontal band)</option>
+          <option value="cubemap">Cube map strip (six faces in one row)</option>
+        </select>
+      </div>
+      <p class="viewer360-hint"><strong>Equirectangular</strong> is the usual 2:1 (or similar) full-sphere photo. <strong>Cylindrical</strong> uses the same image wrapped around you with an open sky/floor. <strong>Cube map strip</strong> expects six square faces left-to-right in OpenGL order: +X, −X, +Y, −Y, +Z, −Z.</p>
+      <div id="viewer360CanvasWrap" class="viewer360-wrap" aria-label="360 degree preview"></div>
     </div>
 
     <div id="creditsCrawlTab" class="tabcontent">

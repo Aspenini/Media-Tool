@@ -12,6 +12,7 @@ const HASH_TO_TAB: Record<string, string> = {
   'audio-spinning': 'audioSpinningTab',
   'audio-hamburger': 'audioHamburgerTab',
   'credits-crawl': 'creditsCrawlTab',
+  '360-viewer': 'viewer360Tab',
 };
 
 function tabIdToHash(tabId: string): string {

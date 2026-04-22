@@ -11,6 +11,7 @@ import { initQrcode } from './tools/qrcode.js';
 import { initAudioSpinning } from './tools/audioSpinning.js';
 import { initAudioHamburger } from './tools/audioHamburger.js';
 import { initCreditsCrawl } from './tools/creditsCrawl.js';
+import { initViewer360 } from './tools/viewer360.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
@@ -25,4 +26,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initAudioSpinning();
   initAudioHamburger();
   initCreditsCrawl();
+  initViewer360();
 });
