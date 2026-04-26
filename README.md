@@ -1,5 +1,9 @@
 # Aspenini Media Tool
 
+![Visits](https://img.shields.io/endpoint?url=https://js-media-tool.aspenini.com/badges/visits.json)
+[![Deploy](https://github.com/Aspenini/Media-Tool/actions/workflows/deploy.yml/badge.svg)](https://github.com/Aspenini/Media-Tool/actions/workflows/deploy.yml)
+[![GitHub Stars](https://img.shields.io/github/stars/Aspenini/Media-Tool?style=flat)](https://github.com/Aspenini/Media-Tool/stargazers)
+
 A powerful browser-based tool for pixel-perfect image scaling, diagonal image slicing, vintage audio effects, QR code generation, and more. Perfect for pixel art, game sprites, audio manipulation, and more.
 
 ## Features
@@ -38,6 +42,62 @@ Output goes to `dist/` for static deployment.
 2. Push to the `master` branch. The GitHub Actions workflow builds and deploys to GitHub Pages.
 3. Configure the repository: Settings → Pages → Source: GitHub Actions.
 4. The site uses CNAME `js-media-tool.aspenini.com` for custom domain.
+
+## Free Analytics Badge (GA4 + Shields.io)
+
+This repo includes a free analytics badge pipeline:
+- **Google Analytics 4** tracks visits on the static site.
+- **GitHub Actions** periodically queries GA4 via the Google Analytics Data API.
+- The workflow writes a Shields endpoint JSON at `public/badges/visits.json`.
+- **Shields.io** renders the live badge from that JSON.
+
+### 1) Add GA4 to the site
+
+In `index.html`, replace both `G-XXXXXXXXXX` values with your GA4 Measurement ID (for example `G-ABC123XYZ9`).
+
+### 2) Create a GA4 service account and enable API access
+
+1. In Google Cloud, create/select a project linked to your GA usage.
+2. Enable **Google Analytics Data API** for that project.
+3. Create a **Service Account**.
+4. Create and download a JSON key for that service account.
+5. In Google Analytics (GA4): **Admin → Property Access Management**.
+6. Add the service account email (ends with `iam.gserviceaccount.com`) and grant at least **Viewer** access.
+7. Copy your GA4 **Property ID** from GA4 Admin.
+
+### 3) Add required GitHub Secrets
+
+In GitHub: **Settings → Secrets and variables → Actions → New repository secret**
+
+- `GA4_PROPERTY_ID`: your numeric GA4 property id (example: `123456789`)
+- `GA_SERVICE_ACCOUNT_KEY`: full JSON key contents from the service account file
+
+The workflow file is `.github/workflows/update-analytics-badge.yml` and runs:
+- every 6 hours on schedule
+- on-demand with **workflow_dispatch** (Run workflow button)
+
+### 4) Badge JSON location and URL
+
+The generated file is:
+- `public/badges/visits.json` in the repo
+- served as `/badges/visits.json` on your Pages site
+
+Badge markdown:
+
+```md
+![Visits](https://img.shields.io/endpoint?url=https://YOUR_SITE_URL/badges/visits.json)
+```
+
+Use one of:
+- Custom domain: `https://js-media-tool.aspenini.com/badges/visits.json`
+- Default Pages domain: `https://<username>.github.io/<repo>/badges/visits.json`
+
+### 5) Maintenance notes
+
+- Metric is configured as `screenPageViews` in the workflow env (`GA4_METRIC`).
+- Badge style is controlled by `BADGE_LABEL` and `BADGE_COLOR`.
+- The workflow commits only when `public/badges/visits.json` changes.
+- Keep all secrets in GitHub Actions secrets. Never commit GA credential files.
 
 ## Project Structure
 

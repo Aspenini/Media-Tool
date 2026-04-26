@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "badge:ga": "node scripts/update-ga-badge.mjs"
   },
   "dependencies": {
+    "googleapis": "^148.0.0",
     "qrcode": "^1.5.4",
     "three": "^0.184.0"
   },
