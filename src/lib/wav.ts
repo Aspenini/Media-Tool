@@ -8,16 +8,14 @@ export function audioBufferToWavBlob(buffer: AudioBuffer, bitDepth = 16): Blob {
   const wavBuffer = new ArrayBuffer(44 + samples * blockAlign);
   const view = new DataView(wavBuffer);
 
-  function writeString(v: DataView, offset: number, string: string): void {
-    for (let i = 0; i < string.length; i++) {
-      v.setUint8(offset + i, string.charCodeAt(i));
-    }
-  }
+  const writeString = (offset: number, str: string): void => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
 
-  writeString(view, 0, 'RIFF');
+  writeString(0, 'RIFF');
   view.setUint32(4, 36 + samples * blockAlign, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
   view.setUint32(16, 16, true);
   view.setUint16(20, format, true);
   view.setUint16(22, numChannels, true);
@@ -25,19 +23,16 @@ export function audioBufferToWavBlob(buffer: AudioBuffer, bitDepth = 16): Blob {
   view.setUint32(28, byteRate, true);
   view.setUint16(32, blockAlign, true);
   view.setUint16(34, bitDepth, true);
-  writeString(view, 36, 'data');
+  writeString(36, 'data');
   view.setUint32(40, samples * blockAlign, true);
 
   let offset = 44;
-
   for (let i = 0; i < samples; i++) {
     for (let ch = 0; ch < numChannels; ch++) {
       let sample = buffer.getChannelData(ch)[i];
       sample = Math.max(-1, Math.min(1, sample));
-
       if (bitDepth === 8) {
-        const unsignedSample = Math.round((sample + 1) * 127.5);
-        view.setUint8(offset, unsignedSample);
+        view.setUint8(offset, Math.round((sample + 1) * 127.5));
         offset += 1;
       } else {
         view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);

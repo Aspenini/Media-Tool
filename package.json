@@ -4,18 +4,27 @@
   "description": "A powerful browser-based tool for pixel-perfect image scaling, diagonal image slicing, vintage audio effects, and more.",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "dev": "bun index.html",
+    "build": "bun run build.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.0.1",
+    "@mui/material": "^9.0.1",
+    "framer-motion": "^12.40.0",
     "qrcode": "^1.5.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "three": "^0.184.0"
   },
   "devDependencies": {
-    "@types/qrcode": "^1.5.5",
-    "@types/three": "^0.184.0",
-    "typescript": "^5.3.3",
-    "vite": "^5.0.0"
+    "@types/bun": "^1.3.14",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.184.1",
+    "typescript": "^6.0.3"
   }
 }
