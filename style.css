@@ -1659,3 +1659,63 @@ input[type="range"]::-webkit-slider-thumb {
   height: 100%;
   touch-action: none;
 }
+
+/* PixelSnap POT */
+.snap-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 2rem 1rem;
+  margin-bottom: 1rem;
+  text-align: center;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.snap-dropzone strong {
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.snap-dropzone span {
+  font-size: 0.85rem;
+}
+
+.snap-dropzone:hover,
+.snap-dropzone-active {
+  border-color: var(--primary);
+  background: var(--primary-muted);
+  color: var(--text);
+}
+
+.snap-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.snap-checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.snap-info {
+  margin-top: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.snap-pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}

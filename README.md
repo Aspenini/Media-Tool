@@ -8,6 +8,7 @@ A powerful browser-based tool for pixel-perfect image scaling, diagonal image sl
 ## Features
 
 - **Scaler**: Pixel-perfectly upscale images by any factor (great for pixel art and sprites).
+- **PixelSnap POT**: Clean up messy pixel-style images by snapping them to a pixel grid, reducing the palette, and exporting sharp power-of-two PNGs for game engines (Godot/Unity/Unreal).
 - **Slicer Tool**: Diagonally slice and combine two images with pixel precision.
 - **Audio Effects**: Apply effects like a 1940s-1950s vintage radio sound to your audio files, with subtle static and authentic EQ.
 - **Color Palette**: Apply retro color palettes (8-bit, NES, Game Boy, PICO-8, etc.) to images.

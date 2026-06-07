@@ -2,6 +2,7 @@ import { showNotification } from './notification.js';
 
 const HASH_TO_TAB: Record<string, string> = {
   scaler: 'scalerTab',
+  'pixel-snap': 'pixelSnapTab',
   'slicer-tool': 'slicerTab',
   'audio-effects': 'audioTab',
   'color-palette': 'paletteTab',

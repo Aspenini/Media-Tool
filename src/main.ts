@@ -12,10 +12,12 @@ import { initAudioSpinning } from './tools/audioSpinning.js';
 import { initAudioHamburger } from './tools/audioHamburger.js';
 import { initCreditsCrawl } from './tools/creditsCrawl.js';
 import { initViewer360 } from './tools/viewer360.js';
+import { initPixelSnap } from './tools/pixelSnap.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   initScaler();
+  initPixelSnap();
   initSlicer();
   initAudio();
   initPalette();

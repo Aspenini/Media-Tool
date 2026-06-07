@@ -53,6 +53,7 @@
       </div>
       <div id="mobileMenu" style="display:none;">
         <button class="mobile-menu-item tab-button" data-tab="scalerTab">Scaler</button>
+        <button class="mobile-menu-item tab-button" data-tab="pixelSnapTab">PixelSnap POT</button>
         <button class="mobile-menu-item tab-button" data-tab="slicerTab">Slicer Tool</button>
         <button class="mobile-menu-item tab-button" data-tab="audioTab">Audio Effects</button>
         <button class="mobile-menu-item tab-button" data-tab="paletteTab">Color Palette</button>
@@ -69,6 +70,7 @@
 
     <div id="tabs">
       <button class="tab-button active" data-tab="scalerTab">Scaler</button>
+      <button class="tab-button" data-tab="pixelSnapTab">PixelSnap POT</button>
       <button class="tab-button" data-tab="slicerTab">Slicer Tool</button>
       <button class="tab-button" data-tab="audioTab">Audio Effects</button>
       <button class="tab-button" data-tab="paletteTab">Color Palette</button>
@@ -92,6 +94,109 @@
       </div>
       <canvas id="scaleCanvas"></canvas>
       <a id="scaleDownload" class="download-link" download="scaled.png" style="display: none;">Download Scaled Image</a>
+    </div>
+
+    <div id="pixelSnapTab" class="tabcontent">
+      <h2>PixelSnap POT</h2>
+      <p>Clean up messy pixel-style images: snap them to a consistent pixel grid, reduce the palette, and export a sharp, game-ready power-of-two PNG. Great for sprites, retro/PS1 textures, icons, and AI-generated pixel art. Everything runs in your browser.</p>
+      <div class="palette-upload-section">
+        <div id="snapDropZone" class="snap-dropzone">
+          <strong>Drop an image here</strong>
+          <span>or click to browse — PNG, JPG, WEBP, BMP</span>
+        </div>
+        <div class="upload-controls">
+          <input type="file" id="snapInput" accept="image/*">
+          <button class="clear-btn" data-snap-clear title="Clear Image"><span>🗑️</span></button>
+        </div>
+      </div>
+
+      <div id="snapSettings" class="palette-settings" style="display: none;">
+        <h3>Settings</h3>
+        <div class="snap-controls-grid">
+          <div class="input-group input-group-stack">
+            <label for="snapPixelSize">Pixel Size:</label>
+            <select id="snapPixelSize">
+              <option value="auto" selected>Auto (detect)</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+              <option value="8">8×</option>
+              <option value="16">16×</option>
+              <option value="32">32×</option>
+              <option value="64">64×</option>
+            </select>
+          </div>
+          <div class="input-group input-group-stack">
+            <label for="snapColors">Colors:</label>
+            <select id="snapColors">
+              <option value="2">2</option>
+              <option value="4">4</option>
+              <option value="8">8</option>
+              <option value="16" selected>16</option>
+              <option value="32">32</option>
+              <option value="64">64</option>
+              <option value="128">128</option>
+              <option value="256">256</option>
+            </select>
+          </div>
+          <div class="input-group input-group-stack">
+            <label for="snapPotMode">Power-of-Two Mode:</label>
+            <select id="snapPotMode">
+              <option value="balanced" selected>Balanced (nearest)</option>
+              <option value="up">Preserve Detail (round up)</option>
+              <option value="down">Performance (round down)</option>
+              <option value="grid-safe">Pixel Grid Safe</option>
+            </select>
+          </div>
+          <div class="input-group input-group-stack">
+            <label for="snapOutputSize">Target Output Size:</label>
+            <select id="snapOutputSize">
+              <option value="auto" selected>Auto (use POT mode)</option>
+              <option value="16">16 px</option>
+              <option value="32">32 px</option>
+              <option value="64">64 px</option>
+              <option value="128">128 px</option>
+              <option value="256">256 px</option>
+              <option value="512">512 px</option>
+              <option value="1024">1024 px</option>
+              <option value="2048">2048 px</option>
+              <option value="4096">4096 px</option>
+            </select>
+          </div>
+        </div>
+        <div class="snap-checkbox-row">
+          <div class="checkbox-group">
+            <input type="checkbox" id="snapPreserveAlpha" checked>
+            <label for="snapPreserveAlpha">Preserve transparency</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="snapDither">
+            <label for="snapDither">Dither colors</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="snapSquare">
+            <label for="snapSquare">Force square output</label>
+          </div>
+        </div>
+        <div class="button-row">
+          <button data-snap-convert>Convert</button>
+        </div>
+        <p id="snapInfo" class="snap-info"></p>
+      </div>
+
+      <div id="snapComparison" class="palette-comparison" style="display: none;">
+        <h3>Before &amp; After</h3>
+        <div class="comparison-container">
+          <div class="image-container">
+            <h4>Original</h4>
+            <canvas id="snapBeforeCanvas"></canvas>
+          </div>
+          <div class="image-container">
+            <h4>Snapped (POT)</h4>
+            <canvas id="snapAfterCanvas" class="snap-pixelated"></canvas>
+          </div>
+        </div>
+        <a id="snapDownload" class="download-link" download="snapped.png" style="display: none;">Download Snapped Image</a>
+      </div>
     </div>
 
     <div id="slicerTab" class="tabcontent">
