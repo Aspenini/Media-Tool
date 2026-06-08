@@ -15,7 +15,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
 import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import { brandIconSvg } from './branding';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { getTheme, type ThemeMode } from './theme';
 import { NotificationProvider } from './components/NotificationProvider';
 import { AnimatedTabPanel } from './components/AnimatedTabPanel';
@@ -58,13 +58,7 @@ export function App() {
             sx={{ backdropFilter: 'blur(12px)', backgroundColor: 'rgba(var(--mui-palette-background-defaultChannel) / 0.78)', borderBottom: '1px solid', borderColor: 'divider' }}
           >
             <Toolbar sx={{ gap: 1.5 }}>
-              <Box
-                component="img"
-                src={brandIconSvg}
-                alt=""
-                aria-hidden
-                sx={{ width: 32, height: 32, borderRadius: 1, flexShrink: 0, display: 'block' }}
-              />
+              <AutoAwesomeRoundedIcon color="primary" />
               <Typography variant="h6" component="h1" sx={{ fontWeight: 700, flexGrow: 1 }}>
                 Aspenini Media Tool
               </Typography>

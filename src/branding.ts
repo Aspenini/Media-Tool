@@ -2,9 +2,6 @@ import faviconSvg from '../public/img/favicon.svg';
 import faviconIco from '../public/img/favicon.ico';
 import faviconPng from '../public/img/favicon.png';
 
-/** Bundled SVG URL — crisp at any size (header logo, primary tab icon). */
-export const brandIconSvg = faviconSvg;
-
 /** Install favicon links in document head (works in dev + production builds). */
 export function installDocumentIcons(): void {
   document.querySelectorAll('link[data-brand-icon]').forEach((node) => node.remove());
