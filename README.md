@@ -49,7 +49,7 @@ bun run typecheck   # tsc --noEmit
 1. Ensure `favicon.png` and `github.png` are in `public/img/`.
 2. Push to the `main`/`master` branch. The GitHub Actions workflow installs Bun, typechecks, builds, and deploys to GitHub Pages.
 3. Configure the repository: Settings → Pages → Source: GitHub Actions.
-4. The site uses CNAME `js-media-tool.aspenini.com` for the custom domain.
+4. The site uses CNAME `media-tool.aspenini.com` for the custom domain.
 
 ## Project Structure
 
