@@ -1,4 +1,6 @@
 node_modules
 dist
+dist-desktop
+dist-routes.ts
 *.local
 .DS_Store

@@ -21,5 +21,5 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src", "build.ts"]
+  "include": ["src", "build.ts", "build-desktop.ts", "server.ts", "server-worker.ts"]
 }
