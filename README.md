@@ -40,14 +40,10 @@ Open http://localhost:3000 (Bun's HTML dev server, with hot reload).
 
 ```bash
 bun run build              # bundles index.html into dist/ via Bun.build
-bun run build:desktop      # standalone executable for the current OS (dist-desktop/)
-bun run build:desktop:all  # cross-compile executables for macOS, Linux, and Windows
 bun run typecheck          # tsc --noEmit
 ```
 
 `bun run build` outputs static files to `dist/` (and copies `public/`, including `CNAME`).
-
-`bun run build:desktop` builds the site, embeds all assets, and compiles a standalone binary (~60MB) with a **native desktop window** (via the OS webview). Double-click or run `./dist-desktop/aspenini-media-tool`. Set `MEDIA_TOOL_HEADLESS=1` to run as a local server only (no window).
 
 ## Deployment (GitHub Pages)
 
@@ -61,9 +57,6 @@ bun run typecheck          # tsc --noEmit
 ```
 index.html            # Minimal root + <script src="src/main.tsx">
 build.ts              # Bun production build (Bun.build + copy public/)
-build-desktop.ts      # Site build + bun build --compile desktop executable(s)
-server.ts             # Desktop entrypoint (native webview window)
-server-worker.ts      # Embedded static asset server (runs in a worker thread)
 public/               # Static assets copied verbatim into dist/ (CNAME, img/)
 src/
 ├── main.tsx          # React root (ThemeProvider, CssBaseline, NotificationProvider)
