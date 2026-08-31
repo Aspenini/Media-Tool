@@ -22,6 +22,7 @@ Built with **React + TypeScript + Material UI**, bundled and served by **Bun**. 
 - **Audio Hamburger**: Play many tracks at once in 3D space; drag each on a map to position it, then export the binaural mix.
 - **Credits Crawl**: Build an end-credits scroll and export it as a WebM video.
 - **360° Image Viewer**: View equirectangular, cylindrical, or cube-map panoramas (powered by three.js).
+- **SVG Dissect**: Inspect an SVG's layer tree, identify and select shapes, drag elements independently, and reset their positions.
 - **Modern UI**: Material UI with light/dark mode, scrollable tabs, and fluid animations.
 
 ## Development
@@ -77,7 +78,7 @@ src/
 
 ## Supported Formats
 
-- **Images**: PNG, JPG, GIF, BMP, and most browser-supported formats.
+- **Images**: PNG, JPG, GIF, BMP, SVG, and most browser-supported formats.
 - **Audio**: WAV, MP3, OGG, M4A, and most browser-supported formats. Output is WAV.
 
 ## Credits

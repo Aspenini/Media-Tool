@@ -12,6 +12,7 @@ import ThreeSixtyRoundedIcon from '@mui/icons-material/ThreeSixtyRounded';
 import SurroundSoundRoundedIcon from '@mui/icons-material/SurroundSoundRounded';
 import MovieRoundedIcon from '@mui/icons-material/MovieRounded';
 import PanoramaPhotosphereRoundedIcon from '@mui/icons-material/PanoramaPhotosphereRounded';
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 
 import { Scaler } from './tools/Scaler';
 import { PixelSnap } from './tools/PixelSnap';
@@ -26,6 +27,7 @@ import { AudioSpinning } from './tools/AudioSpinning';
 import { AudioHamburger } from './tools/AudioHamburger';
 import { CreditsCrawl } from './tools/CreditsCrawl';
 import { Viewer360 } from './tools/Viewer360';
+import { SvgDissect } from './tools/SvgDissect';
 
 export interface ToolDef {
   id: string;
@@ -49,6 +51,7 @@ export const TOOLS: ToolDef[] = [
   { id: 'audioHamburger', hash: 'audio-hamburger', label: 'Audio Hamburger', icon: <SurroundSoundRoundedIcon />, Component: AudioHamburger },
   { id: 'creditsCrawl', hash: 'credits-crawl', label: 'Credits Crawl', icon: <MovieRoundedIcon />, Component: CreditsCrawl },
   { id: 'viewer360', hash: '360-viewer', label: '360 Image Viewer', icon: <PanoramaPhotosphereRoundedIcon />, Component: Viewer360 },
+  { id: 'svgDissect', hash: 'svg-dissect', label: 'SVG Dissect', icon: <AccountTreeRoundedIcon />, Component: SvgDissect },
 ];
 
 export const TOOL_HASHES: readonly string[] = TOOLS.map((t) => t.hash);
