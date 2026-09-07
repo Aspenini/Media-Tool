@@ -13,6 +13,7 @@ import SurroundSoundRoundedIcon from '@mui/icons-material/SurroundSoundRounded';
 import MovieRoundedIcon from '@mui/icons-material/MovieRounded';
 import PanoramaPhotosphereRoundedIcon from '@mui/icons-material/PanoramaPhotosphereRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
+import PhotoSizeSelectLargeRoundedIcon from '@mui/icons-material/PhotoSizeSelectLargeRounded';
 
 import { Scaler } from './tools/Scaler';
 import { PixelSnap } from './tools/PixelSnap';
@@ -28,6 +29,7 @@ import { AudioHamburger } from './tools/AudioHamburger';
 import { CreditsCrawl } from './tools/CreditsCrawl';
 import { Viewer360 } from './tools/Viewer360';
 import { SvgDissect } from './tools/SvgDissect';
+import { ImageResize } from './tools/ImageResize';
 
 export interface ToolDef {
   id: string;
@@ -39,6 +41,7 @@ export interface ToolDef {
 
 export const TOOLS: ToolDef[] = [
   { id: 'scaler', hash: 'scaler', label: 'Scaler', icon: <AspectRatioRoundedIcon />, Component: Scaler },
+  { id: 'imageResize', hash: 'resize-convert', label: 'Resize & Convert', icon: <PhotoSizeSelectLargeRoundedIcon />, Component: ImageResize },
   { id: 'pixelSnap', hash: 'pixel-snap', label: 'PixelSnap POT', icon: <GridOnRoundedIcon />, Component: PixelSnap },
   { id: 'slicer', hash: 'slicer-tool', label: 'Slicer Tool', icon: <ContentCutRoundedIcon />, Component: Slicer },
   { id: 'audio', hash: 'audio-effects', label: 'Audio Effects', icon: <RadioRoundedIcon />, Component: AudioEffects },

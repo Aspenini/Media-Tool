@@ -24,6 +24,9 @@ async function main(): Promise<void> {
     entrypoints: ['index.html'],
     outdir: OUT_DIR,
     target: 'browser',
+    // Keeps dynamic imports in their own chunks, so the ImageMagick glue is
+    // fetched only by visitors who actually convert to a format that needs it.
+    splitting: true,
     minify: true,
     sourcemap: 'linked',
     naming: {

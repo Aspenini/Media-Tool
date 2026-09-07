@@ -10,6 +10,7 @@ Built with **React + TypeScript + Material UI**, bundled and served by **Bun**. 
 ## Features
 
 - **Scaler**: Pixel-perfectly upscale images by any factor (great for pixel art and sprites).
+- **Image Resize & Convert**: Resize to any dimensions with aspect-ratio locking and convert between PNG, JPEG, WebP, AVIF, TIFF, BMP and GIF. The browser handles common formats instantly; ImageMagick (WebAssembly) loads on demand for formats it cannot read or write, such as TIFF and PSD.
 - **PixelSnap POT**: Clean up messy pixel-style images by snapping them to a pixel grid, reducing the palette, and exporting sharp power-of-two PNGs for game engines (Godot/Unity/Unreal).
 - **Slicer Tool**: Diagonally slice and combine two images with pixel precision.
 - **Audio Effects**: Apply a 1940s-1950s vintage radio sound or 8-/16-bit bitcrushing to one or many files, exported as a TAR archive of WAVs.
