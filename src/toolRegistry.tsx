@@ -178,7 +178,7 @@ export const TOOLS: ToolDef[] = [
     hash: 'csv-to-image',
     name: 'CSV to Image',
     tagline: 'Spreadsheets into table images',
-    description: 'Render CSV files as clean table images. Drop several to batch-export them as one archive.',
+    description: 'Render CSV files as clean table images. Drop several, preview each one, and download them all as separate PNGs.',
     category: 'make',
     icon: TableChartRoundedIcon,
     accent: '#22b35e',

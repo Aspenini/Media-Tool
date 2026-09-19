@@ -48,8 +48,7 @@ import {
   type Rotation,
 } from '../lib/batchResize';
 import { useFileQueue } from '../hooks/useFileQueue';
-import { createTarBlob } from '../lib/tar';
-import { downloadUrl } from '../lib/download';
+import { downloadEach } from '../lib/download';
 import { MONO_FONT } from '../theme';
 
 const ACCEPT = 'image/*,.tif,.tiff,.psd,.tga,.dds';
@@ -130,7 +129,6 @@ export function ImageResize() {
   const [pixelArt, setPixelArt] = useState(false);
 
   const [progress, setProgress] = useState<number | null>(null);
-  const [archive, setArchive] = useState<{ url: string; name: string } | null>(null);
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
 
   const settings = useMemo<ResizeSettings>(
@@ -153,10 +151,6 @@ export function ImageResize() {
   const recipeKey = JSON.stringify([settings, saveAs, quality, targetBytes, pixelArt, background]);
   useEffect(() => {
     queue.updateAll(withoutResult);
-    setArchive((prev) => {
-      if (prev) URL.revokeObjectURL(prev.url);
-      return null;
-    });
   }, [recipeKey]);
 
   const addFiles = (files: File[]) => {
@@ -172,7 +166,6 @@ export function ImageResize() {
 
   const clearAll = () => {
     queue.clear();
-    setArchive(null);
   };
 
   const sortBy = (key: SortKey) => {
@@ -197,9 +190,7 @@ export function ImageResize() {
   const runExport = async () => {
     if (!ready.length) return;
     setProgress(0);
-    setArchive(null);
     const used = new Set<string>();
-    const entries: { name: string; data: Uint8Array }[] = [];
     const finished: Result[] = [];
     let failures = 0;
     let missed = 0;
@@ -233,7 +224,6 @@ export function ImageResize() {
         if (out.missedTarget) missed++;
         finished.push(result);
         queue.update(item.id, { result });
-        if (ready.length > 1) entries.push({ name, data: new Uint8Array(await out.blob.arrayBuffer()) });
       } catch (error) {
         failures++;
         notify(`${item.file.name}: ${error instanceof Error ? error.message : 'conversion failed'}`, 'error');
@@ -241,15 +231,9 @@ export function ImageResize() {
       setProgress(Math.round(((n + 1) / ready.length) * 100));
     }
 
-    if (finished.length === 1 && ready.length === 1) {
-      downloadUrl(finished[0].url, finished[0].name);
-    } else if (entries.length) {
-      const url = URL.createObjectURL(createTarBlob(entries));
-      const name = `resized_${entries.length}_images.tar`;
-      setArchive({ url, name });
-      downloadUrl(url, name);
-    }
     setProgress(null);
+    // Each image saves as its own file.
+    void downloadEach(finished);
     if (!failures) {
       notify(
         missed ? `Exported — ${missed} image(s) couldn't get under the target size.` : `Exported ${finished.length} image${finished.length === 1 ? '' : 's'}.`,
@@ -259,6 +243,7 @@ export function ImageResize() {
   };
 
   const totalBytes = items.reduce((n, i) => n + i.file.size, 0);
+  const exported = items.filter((i) => i.result);
 
   return (
     <Workbench panelWidth={340}>
@@ -275,7 +260,15 @@ export function ImageResize() {
               onClick: runExport,
               disabled: !ready.length,
             }}
-            secondary={archive && { href: archive.url, download: archive.name, label: 'Download all again (TAR)' }}
+            secondary={
+              exported.length > 0 && {
+                label: exported.length === 1 ? 'Download again' : `Download all ${exported.length} again`,
+                icon: <DownloadRoundedIcon />,
+                onClick: () => void downloadEach(exported.map((i) => i.result!)),
+                disabled: busy,
+              }
+            }
+            status={ready.length > 1 ? 'Each image downloads separately — allow multiple downloads if your browser asks.' : undefined}
           />
         }
       >

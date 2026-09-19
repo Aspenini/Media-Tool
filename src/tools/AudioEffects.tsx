@@ -25,16 +25,13 @@ import { applyAudioEffect, AUDIO_EFFECTS, exportBitDepthFor, type AudioEffectId 
 import { audioBufferToWavBlob } from '../lib/wav';
 import { stripExtension } from '../lib/image';
 import { formatBytes } from '../lib/format';
-import { downloadUrl } from '../lib/download';
+import { downloadEach, downloadUrl } from '../lib/download';
 
 const EFFECT_META: Record<AudioEffectId, { icon: typeof RadioRoundedIcon; blurb: string }> = {
   vintageRadio: { icon: RadioRoundedIcon, blurb: 'Band-limited, saturated, mono — a 1940s wireless set.' },
   bitcrusher8: { icon: MemoryRoundedIcon, blurb: 'Crunchy 8-bit quantization, chiptune grit.' },
   bitcrusher16: { icon: GraphicEqRoundedIcon, blurb: 'Subtle 16-bit reduction, cleaner digital edge.' },
 };
-
-/** Browsers can drop downloads fired in the same tick; space them out. */
-const DOWNLOAD_GAP_MS = 350;
 
 interface Track extends QueuedFile {
   /** For previewing the untouched file. */
@@ -152,13 +149,7 @@ export function AudioEffects() {
     if (!failures) notify(`${todo.length} file${todo.length === 1 ? '' : 's'} ready — preview or download them.`, 'success');
   };
 
-  const downloadAll = async () => {
-    for (let i = 0; i < finished.length; i++) {
-      const { url, name } = finished[i].result!;
-      downloadUrl(url, name);
-      if (i < finished.length - 1) await new Promise((r) => setTimeout(r, DOWNLOAD_GAP_MS));
-    }
-  };
+  const downloadAll = () => downloadEach(finished.map((t) => t.result!));
 
   const runningIndex = tracks.findIndex((t) => t.id === runningId);
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Typography from '@mui/material/Typography';
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import InventoryRoundedIcon from '@mui/icons-material/InventoryRounded';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { ExportFooter } from '../components/ExportFooter';
 import { FileQueueList } from '../components/FileQueueList';
@@ -10,7 +10,7 @@ import { useFileQueue } from '../hooks/useFileQueue';
 import { useNotification } from '../components/NotificationProvider';
 import { Artboard, Panel, PanelSection, Stage, StageTag, ToolIntro, Workbench } from '../components/Workbench';
 import { canvasToPngBlob, renderCsvTable } from '../lib/csv';
-import { createTarBlob } from '../lib/tar';
+import { downloadEach, type DownloadItem } from '../lib/download';
 import { stripExtension } from '../lib/image';
 import { MONO_FONT } from '../theme';
 
@@ -28,7 +28,6 @@ export function Csv() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
-  const [tar, setTar] = useState<{ url: string; name: string } | null>(null);
 
   const addFiles = (next: File[]) => {
     const csvs = next.filter((f) => f.name.toLowerCase().endsWith('.csv') || f.type.includes('csv') || f.type === 'text/plain');
@@ -37,7 +36,6 @@ export function Csv() {
       return;
     }
     queue.add(csvs);
-    setTar(null);
   };
 
   const current = files.find((f) => f.id === selectedId) ?? files[0];
@@ -67,31 +65,24 @@ export function Csv() {
     };
   }, [current, notify]);
 
-  const exportAll = async () => {
-    setTar(null);
+  const downloadAll = async () => {
     setProgress(0);
-    const entries: { name: string; data: Uint8Array }[] = [];
+    const tables: DownloadItem[] = [];
     for (let i = 0; i < files.length; i++) {
       try {
-        const canvas = renderCsvTable(await files[i].file.text());
-        const blob = await canvasToPngBlob(canvas);
-        const buf = blob ? await blob.arrayBuffer() : new ArrayBuffer(0);
-        entries.push({ name: `${stripExtension(files[i].file.name)}_table.png`, data: new Uint8Array(buf) });
+        const blob = await canvasToPngBlob(renderCsvTable(await files[i].file.text()));
+        if (blob) tables.push({ blob, name: `${stripExtension(files[i].file.name)}_table.png` });
       } catch (e) {
-        console.warn('Skipping CSV file:', files[i].file.name, e);
+        notify(`${files[i].file.name}: ${e instanceof Error ? e.message : "couldn't be rendered"}`, 'error');
       }
       setProgress(Math.round(((i + 1) / files.length) * 100));
       await new Promise((r) => setTimeout(r, 10));
     }
-    setTar({ url: URL.createObjectURL(createTarBlob(entries)), name: `csv_tables_${files.length}files.tar` });
     setProgress(null);
-    notify(`${entries.length} table image(s) archived.`, 'success');
+    await downloadEach(tables);
   };
 
-  const remove = (id: string) => {
-    queue.remove(id);
-    setTar(null);
-  };
+  const remove = (id: string) => queue.remove(id);
 
   return (
     <Workbench panelWidth={320}>
@@ -101,11 +92,15 @@ export function Csv() {
             progress={progress}
             primary={{ href: preview?.url ?? '', download: preview?.name, disabled: !preview, label: 'Download this table' }}
             secondary={
-              files.length > 1 &&
-              (tar
-                ? { href: tar.url, download: tar.name, label: `Download all ${files.length} (TAR)` }
-                : { label: `Archive all ${files.length}`, icon: <InventoryRoundedIcon />, onClick: exportAll, busy: progress !== null })
+              files.length > 1 && {
+                label: `Download all ${files.length} tables`,
+                icon: <DownloadRoundedIcon />,
+                onClick: () => void downloadAll(),
+                busy: progress !== null,
+                busyLabel: 'Rendering…',
+              }
             }
+            status={files.length > 1 ? 'Click a file to preview it. Each table downloads as its own PNG.' : undefined}
           />
         }
       >
