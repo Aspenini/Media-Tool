@@ -15,6 +15,7 @@ import MovieRoundedIcon from '@mui/icons-material/MovieRounded';
 import PanoramaPhotosphereRoundedIcon from '@mui/icons-material/PanoramaPhotosphereRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import PhotoSizeSelectLargeRoundedIcon from '@mui/icons-material/PhotoSizeSelectLargeRounded';
+import SentimentVerySatisfiedRoundedIcon from '@mui/icons-material/SentimentVerySatisfiedRounded';
 import type { ThemeMode } from './theme';
 
 export type CategoryId = 'image' | 'audio' | 'make' | 'inspect';
@@ -149,6 +150,17 @@ export const TOOLS: ToolDef[] = [
     icon: SurroundSoundRoundedIcon,
     accent: '#f2c230',
     Component: load(() => import('./tools/AudioHamburger'), 'AudioHamburger'),
+  },
+  {
+    id: 'memeMaker',
+    hash: 'meme-maker',
+    name: 'Meme Maker',
+    tagline: 'Captions with icons in the words',
+    description: 'Caption a photo or clip — on the media or in a bar above it — with little icons tucked right into the words. Export PNG or video.',
+    category: 'make',
+    icon: SentimentVerySatisfiedRoundedIcon,
+    accent: '#f5b82e',
+    Component: load(() => import('./tools/memeMaker/MemeMaker'), 'MemeMaker'),
   },
   {
     id: 'qrcode',
