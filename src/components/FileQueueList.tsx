@@ -23,6 +23,8 @@ interface FileQueueListProps<T extends QueuedFile> {
   /** Makes rows selectable. */
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  /** Extra per-row buttons (play, download…), shown before the remove button. */
+  actions?: (item: T, index: number) => ReactNode;
   disabled?: boolean;
 }
 
@@ -33,7 +35,7 @@ function rowDetail(state: QueueStatus, fallback: ReactNode): ReactNode {
 }
 
 /** The standard list for tools that queue several files. */
-export function FileQueueList<T extends QueuedFile>({ items, onRemove, status, meta, selectedId, onSelect, disabled }: FileQueueListProps<T>) {
+export function FileQueueList<T extends QueuedFile>({ items, onRemove, status, meta, selectedId, onSelect, actions, disabled }: FileQueueListProps<T>) {
   return (
     <Box role="list" sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', overflow: 'hidden' }}>
       {items.map((item, i) => {
@@ -80,6 +82,7 @@ export function FileQueueList<T extends QueuedFile>({ items, onRemove, status, m
                 {rowDetail(state, meta?.(item, i) ?? formatBytes(item.file.size))}
               </Typography>
             </ButtonBase>
+            {actions && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>{actions(item, i)}</Box>}
             {onRemove && (
               <IconButton size="small" aria-label={`Remove ${item.file.name}`} disabled={disabled} onClick={() => onRemove(item.id)} sx={{ mr: 1 }}>
                 <CloseRoundedIcon fontSize="small" />

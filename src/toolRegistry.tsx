@@ -111,7 +111,7 @@ export const TOOLS: ToolDef[] = [
     hash: 'audio-effects',
     name: 'Audio Effects',
     tagline: 'Vintage radio & bitcrush, in batch',
-    description: 'Run a stack of audio files through a 1940s radio or a bitcrusher and get them back as a TAR of WAVs.',
+    description: 'Run a stack of audio files through a 1940s radio or a bitcrusher, compare each one before and after, and download the WAVs.',
     category: 'audio',
     icon: RadioRoundedIcon,
     accent: '#ff7a1a',
