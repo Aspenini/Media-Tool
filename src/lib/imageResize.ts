@@ -7,6 +7,8 @@
  * format such as TIFF/PSD, or an output format the browser cannot encode.
  */
 
+import { assetUrl } from './assetUrl';
+
 export type OutputFormat = 'png' | 'jpeg' | 'webp' | 'avif' | 'tiff' | 'bmp' | 'gif';
 
 export type Engine = 'canvas' | 'magick';
@@ -180,22 +182,6 @@ export function isMagickLoaded(): boolean {
   return magickPromise !== null;
 }
 
-/**
- * Resolve a bundler-emitted asset path.
- *
- * The two environments disagree, so both are handled:
- *  - Production emits a path relative to the chunk that references it
- *    (`./magick-<hash>.wasm` inside `/assets/`), which only resolves correctly
- *    against `import.meta.url`.
- *  - Bun's dev server emits a root-absolute `/_bun/asset/...` path but reports
- *    `import.meta.url` as a `file://` URL, which would produce a `file://` asset
- *    URL and fail.
- */
-function resolveAssetUrl(path: string): URL {
-  const base = import.meta.url.startsWith('http') ? import.meta.url : location.href;
-  return new URL(path, base);
-}
-
 /** Import and initialise ImageMagick, at most once per page. */
 export function loadMagick(): Promise<MagickModule> {
   if (!magickPromise) {
@@ -204,7 +190,7 @@ export function loadMagick(): Promise<MagickModule> {
         import('@imagemagick/magick-wasm'),
         import('@imagemagick/magick-wasm/magick.wasm'),
       ]);
-      const response = await fetch(resolveAssetUrl(wasm.default));
+      const response = await fetch(assetUrl(wasm.default));
       if (!response.ok) throw new Error(`Could not fetch the ImageMagick engine (${response.status})`);
       await mod.initializeImageMagick(new Uint8Array(await response.arrayBuffer()));
       return mod;
@@ -340,9 +326,4 @@ export async function convertImage(request: ConvertRequest): Promise<ConvertResu
   return { blob, size, engine: 'magick' };
 }
 
-/** Human-readable byte size, e.g. "1.4 MB". */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
+export { formatBytes } from './format';

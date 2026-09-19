@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -11,8 +10,10 @@ import StopRoundedIcon from '@mui/icons-material/StopRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import HeadphonesRoundedIcon from '@mui/icons-material/HeadphonesRounded';
 import { FileDropZone } from '../components/FileDropZone';
+import { ListenerHead } from '../components/ListenerHead';
 import { useNotification } from '../components/NotificationProvider';
 import { Panel, PanelSection, Stage, StageDock, StageTag, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { FieldLabel, Segmented, SliderField, SwitchRow } from '../components/controls';
 import { OrbitalEngine, type OrbitalParams, type OrbitalTick, type PlaybackState } from '../lib/orbital';
 import type { DistanceModel } from '../lib/spatial';
@@ -167,14 +168,18 @@ export function AudioSpinning() {
 
       <Panel
         footer={
-          <>
-            <Button size="large" variant="outlined" onClick={download} disabled={!hasFile || rendering} startIcon={<DownloadRoundedIcon />}>
-              {rendering ? 'Rendering…' : 'Download 3D WAV'}
-            </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
-              {status}
-            </Typography>
-          </>
+          <ExportFooter
+            primary={{
+              variant: 'outlined',
+              label: 'Download 3D WAV',
+              icon: <DownloadRoundedIcon />,
+              busy: rendering,
+              busyLabel: 'Rendering…',
+              onClick: download,
+              disabled: !hasFile,
+            }}
+            status={status}
+          />
         }
       >
         <ToolIntro />
@@ -282,12 +287,7 @@ function OrbitRadar({ x, z, radius, height, angle, playing }: { x: number; z: nu
         <circle cx="50" cy="50" r={R} fill="none" stroke={accent} strokeOpacity="0.45" strokeWidth="0.35" strokeDasharray="1 1.2" />
         <line x1="50" y1="50" x2={cx} y2={cy} stroke="url(#spin-sweep)" strokeWidth="0.6" />
         {/* Listener, seen from above, facing up. */}
-        <g>
-          <ellipse cx="50" cy="50" rx="4" ry="4.6" fill={theme.palette.background.paper} stroke={ink} strokeOpacity="0.5" strokeWidth="0.4" />
-          <ellipse cx="45.6" cy="50" rx="0.9" ry="1.6" fill={ink} fillOpacity="0.5" />
-          <ellipse cx="54.4" cy="50" rx="0.9" ry="1.6" fill={ink} fillOpacity="0.5" />
-          <path d="M48.8 45.8 L50 44.2 L51.2 45.8" fill="none" stroke={ink} strokeOpacity="0.6" strokeWidth="0.4" />
-        </g>
+        <ListenerHead size={4} />
         {/* Source */}
         <circle cx={cx} cy={cy} r={dotR * 2.4} fill={accent} fillOpacity={playing ? 0.18 : 0.1}>
           {playing && <animate attributeName="r" values={`${dotR * 1.6};${dotR * 3};${dotR * 1.6}`} dur="1.4s" repeatCount="indefinite" />}

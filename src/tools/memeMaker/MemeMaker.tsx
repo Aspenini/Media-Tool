@@ -32,7 +32,8 @@ import VolumeUpRoundedIcon from '@mui/icons-material/VolumeUpRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { FileButton, FileDropZone } from '../../components/FileDropZone';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../../components/Workbench';
-import { ChoiceCard, FieldLabel, Segmented, SliderField, SwitchRow } from '../../components/controls';
+import { ExportFooter } from '../../components/ExportFooter';
+import { ChoiceCard, ColorField, Segmented, SliderField, SwitchRow } from '../../components/controls';
 import { canCopyImage } from '../../lib/meme/export.ts';
 import { FONTS } from '../../lib/meme/fonts.ts';
 import { renderScene, sameFrame, type Frame, type Scene } from '../../lib/meme/render.ts';
@@ -124,28 +125,30 @@ function Controls() {
   return (
     <Panel
       footer={
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            size="large"
-            sx={{ flex: 1 }}
-            onClick={() => void exportMedia()}
-            disabled={!media || busy}
-            startIcon={busy ? <CircularProgress size={18} color="inherit" /> : <DownloadRoundedIcon />}
-            title={`${MOD}+S`}
-          >
-            {busy ? 'Recording…' : media?.kind === 'video' ? 'Export video' : 'Export PNG'}
-          </Button>
-          {media?.kind === 'image' && canCopyImage() && (
-            <Tooltip title="Copy to clipboard">
-              <span>
-                <Button size="large" variant="outlined" onClick={() => void copyImage()} disabled={busy} aria-label="Copy image" sx={{ minWidth: 0, px: 2 }}>
-                  <ContentCopyRoundedIcon fontSize="small" />
-                </Button>
-              </span>
-            </Tooltip>
-          )}
-        </Box>
-      }
+        <ExportFooter
+          primary={{
+            label: media?.kind === 'video' ? 'Export video' : 'Export PNG',
+            icon: <DownloadRoundedIcon />,
+            busy,
+            busyLabel: 'Recording…',
+            onClick: () => void exportMedia(),
+            disabled: !media,
+            title: `${MOD}+S`,
+          }}
+          aside={
+            media?.kind === 'image' &&
+            canCopyImage() && (
+              <Tooltip title="Copy to clipboard">
+                <span>
+                  <Button size="large" variant="outlined" onClick={() => void copyImage()} disabled={busy} aria-label="Copy image" sx={{ minWidth: 0, px: 2, height: '100%' }}>
+                    <ContentCopyRoundedIcon fontSize="small" />
+                  </Button>
+                </span>
+              </Tooltip>
+            )
+          }
+        />
+        }
     >
       <ToolIntro />
       <Box component="fieldset" disabled={busy} sx={{ border: 0, m: 0, p: 0, minWidth: 0 }}>
@@ -318,65 +321,6 @@ function StyleSection() {
         </Box>
       </Box>
     </PanelSection>
-  );
-}
-
-function ColorField({ label, value, presets, onChange }: { label: string; value: string; presets: string[]; onChange: (value: string) => void }) {
-  return (
-    <Box>
-      <FieldLabel value={value.toUpperCase()}>{label}</FieldLabel>
-      <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center' }}>
-        {presets.map((color) => {
-          const selected = color.toLowerCase() === value.toLowerCase();
-          return (
-            <Box
-              key={color}
-              component="button"
-              type="button"
-              aria-label={`${label} ${color}`}
-              aria-pressed={selected}
-              onClick={() => onChange(color)}
-              sx={(theme) => ({
-                width: 28,
-                height: 28,
-                p: 0,
-                borderRadius: '50%',
-                cursor: 'pointer',
-                bgcolor: color,
-                border: '1px solid',
-                borderColor: 'divider',
-                boxShadow: selected ? `0 0 0 2px ${theme.palette.background.paper}, 0 0 0 4px ${theme.palette.primary.main}` : 'none',
-                '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
-              })}
-            />
-          );
-        })}
-        <Tooltip title="Custom color">
-          <Box
-            component="label"
-            sx={{
-              position: 'relative',
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              cursor: 'pointer',
-              background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)',
-              border: '1px solid',
-              borderColor: 'divider',
-            }}
-          >
-            <Box
-              component="input"
-              type="color"
-              value={value}
-              aria-label={`Custom ${label.toLowerCase()}`}
-              onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
-              sx={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
-            />
-          </Box>
-        </Tooltip>
-      </Box>
-    </Box>
   );
 }
 

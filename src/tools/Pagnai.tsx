@@ -8,9 +8,9 @@ import { useTheme } from '@mui/material/styles';
 import GraphicEqRoundedIcon from '@mui/icons-material/GraphicEqRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import StopRoundedIcon from '@mui/icons-material/StopRounded';
-import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
 import { Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { FieldLabel, Segmented, SliderField, SwitchRow } from '../components/controls';
 import { getAudioContextClass } from '../lib/spatial';
 import { audioBufferToWavBlob } from '../lib/wav';
@@ -131,17 +131,21 @@ export function Pagnai() {
     <Workbench panelWidth={340}>
       <Panel
         footer={
-          <>
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-              <Button size="large" onClick={playing ? stop : play} startIcon={playing ? <StopRoundedIcon /> : <PlayArrowRoundedIcon />}>
-                {playing ? 'Stop' : 'Play'}
-              </Button>
-              <Button size="large" variant="outlined" onClick={() => generate() && notify('WAV rendered — ready to download.', 'success')} startIcon={<GraphicEqRoundedIcon />}>
+          <ExportFooter
+            primary={{ label: playing ? 'Stop' : 'Play', icon: playing ? <StopRoundedIcon /> : <PlayArrowRoundedIcon />, onClick: playing ? stop : play }}
+            aside={
+              <Button
+                size="large"
+                variant="outlined"
+                onClick={() => generate() && notify('WAV rendered — ready to download.', 'success')}
+                startIcon={<GraphicEqRoundedIcon />}
+                sx={{ flex: 1 }}
+              >
                 Render
               </Button>
-            </Box>
-            {audioUrl && <DownloadButton variant="outlined" href={audioUrl} download="pagnai_audio.wav" label="Download WAV" />}
-          </>
+            }
+            secondary={audioUrl ? { href: audioUrl, download: 'pagnai_audio.wav', label: 'Download WAV' } : null}
+          />
         }
       >
         <ToolIntro />

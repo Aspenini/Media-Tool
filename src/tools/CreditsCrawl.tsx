@@ -15,6 +15,7 @@ import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import { useNotification } from '../components/NotificationProvider';
 import { ChoiceCard } from '../components/controls';
 import { Panel, PanelSection, Stage, StageTag, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { CREDIT_FONTS, fontToCssFamily, recordCreditsCrawl, type CreditItem } from '../lib/creditsCrawl';
 import { MONO_FONT } from '../theme';
 
@@ -133,9 +134,9 @@ export function CreditsCrawl() {
     <Workbench panelWidth={420}>
       <Panel
         footer={
-          <Button size="large" startIcon={<MovieRoundedIcon />} onClick={generate} disabled={!data.length}>
-            Record 1080p WebM · ~{Math.ceil(seconds)}s
-          </Button>
+          <ExportFooter
+            primary={{ label: `Record 1080p WebM · ~${Math.ceil(seconds)}s`, icon: <MovieRoundedIcon />, onClick: generate, disabled: !data.length }}
+          />
         }
       >
         <ToolIntro />

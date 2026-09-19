@@ -5,9 +5,9 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import GridOnRoundedIcon from '@mui/icons-material/GridOnRounded';
 import { FileDropZone } from '../components/FileDropZone';
-import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
 import { Artboard, Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { FieldLabel, Segmented, Stat, SwitchRow } from '../components/controls';
 import { loadImageFromFile, stripExtension } from '../lib/image';
 import { processPixelSnap, type PotMode, type SnapSettings } from '../lib/pixelSnap';
@@ -126,13 +126,13 @@ export function PixelSnap() {
     <Workbench panelWidth={330}>
       <Panel
         footer={
-          <DownloadButton
-            size="large"
-            fullWidth
-            href={download?.url ?? ''}
-            download={download?.name ?? ''}
-            disabled={!download}
-            label={info ? `Download ${info.outWidth}×${info.outHeight} PNG` : 'Download'}
+          <ExportFooter
+            primary={{
+              href: download?.url ?? '',
+              download: download?.name,
+              disabled: !download,
+              label: info ? `Download ${info.outWidth}×${info.outHeight} PNG` : 'Download',
+            }}
           />
         }
       >

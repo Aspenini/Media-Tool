@@ -6,9 +6,9 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import AspectRatioRoundedIcon from '@mui/icons-material/AspectRatioRounded';
 import { FileDropZone } from '../components/FileDropZone';
-import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
 import { Artboard, Panel, PanelSection, Stage, StageDock, StageTag, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { Segmented, Stat } from '../components/controls';
 import { loadImageFromFile, scaleImageToCanvas, stripExtension } from '../lib/image';
 import { MONO_FONT } from '../theme';
@@ -67,13 +67,8 @@ export function Scaler() {
     <Workbench>
       <Panel
         footer={
-          <DownloadButton
-            href={download?.url ?? ''}
-            download={download?.name ?? ''}
-            disabled={!download}
-            size="large"
-            fullWidth
-            label={img ? `Download ${outW}×${outH} PNG` : 'Download'}
+          <ExportFooter
+            primary={{ href: download?.url ?? '', download: download?.name, disabled: !download, label: img ? `Download ${outW}×${outH} PNG` : 'Download' }}
           />
         }
       >

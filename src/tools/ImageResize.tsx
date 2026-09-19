@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
@@ -8,7 +8,6 @@ import Collapse from '@mui/material/Collapse';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import LinearProgress from '@mui/material/LinearProgress';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
@@ -34,7 +33,8 @@ import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
 import { Panel, PanelSection, Stage, Workbench, backdrop, useTool } from '../components/Workbench';
-import { FieldLabel, Segmented } from '../components/controls';
+import { ExportFooter } from '../components/ExportFooter';
+import { ColorSwatchInput, FieldLabel, Segmented } from '../components/controls';
 import { stripExtension } from '../lib/image';
 import { formatBytes, formatInfo, isMagickLoaded, readSource, type OutputFormat, type SourceImage } from '../lib/imageResize';
 import {
@@ -47,7 +47,9 @@ import {
   type ResizeSettings,
   type Rotation,
 } from '../lib/batchResize';
+import { useFileQueue } from '../hooks/useFileQueue';
 import { createTarBlob } from '../lib/tar';
+import { downloadUrl } from '../lib/download';
 import { MONO_FONT } from '../theme';
 
 const ACCEPT = 'image/*,.tif,.tiff,.psd,.tga,.dds';
@@ -85,19 +87,28 @@ interface Item {
   result: Result | null;
 }
 
-let nextId = 0;
+function disposeItem(item: Item) {
+  if (item.source) URL.revokeObjectURL(item.source.previewUrl);
+  if (item.result) URL.revokeObjectURL(item.result.url);
+}
 
-function downloadBlobUrl(url: string, name: string) {
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
+/** Drop an item's finished export, releasing its URL. */
+function withoutResult(item: Item): Item {
+  if (!item.result) return item;
+  URL.revokeObjectURL(item.result.url);
+  return { ...item, result: null };
 }
 
 export function ImageResize() {
   const notify = useNotification();
   const tool = useTool();
-  const [items, setItems] = useState<Item[]>([]);
+  // Same file twice is allowed: you may want it at two sizes.
+  const queue = useFileQueue<Item>({
+    dedupe: false,
+    create: (file, id) => ({ id, file, status: 'loading', source: null, rotation: 0, result: null }),
+    dispose: disposeItem,
+  });
+  const items = queue.items;
 
   // Resize settings
   const [mode, setMode] = useState<ResizeMode>('size');
@@ -122,9 +133,6 @@ export function ImageResize() {
   const [archive, setArchive] = useState<{ url: string; name: string } | null>(null);
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
 
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
-
   const settings = useMemo<ResizeSettings>(
     () => ({
       mode,
@@ -144,71 +152,38 @@ export function ImageResize() {
   // Any change to the recipe invalidates finished exports.
   const recipeKey = JSON.stringify([settings, saveAs, quality, targetBytes, pixelArt, background]);
   useEffect(() => {
-    setItems((prev) => {
-      if (!prev.some((i) => i.result)) return prev;
-      prev.forEach((i) => i.result && URL.revokeObjectURL(i.result.url));
-      return prev.map((i) => ({ ...i, result: null }));
-    });
+    queue.updateAll(withoutResult);
     setArchive((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return null;
     });
   }, [recipeKey]);
 
-  // Revoke everything on unmount.
-  useEffect(
-    () => () => {
-      itemsRef.current.forEach((i) => {
-        if (i.source) URL.revokeObjectURL(i.source.previewUrl);
-        if (i.result) URL.revokeObjectURL(i.result.url);
-      });
-    },
-    [],
-  );
-
   const addFiles = (files: File[]) => {
-    const fresh: Item[] = files.map((file) => ({ id: `img-${nextId++}`, file, status: 'loading', source: null, rotation: 0, result: null }));
-    setItems((prev) => [...prev, ...fresh]);
-    for (const item of fresh) {
+    for (const item of queue.add(files)) {
       readSource(item.file)
-        .then((source) => setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, source, status: 'ready' } : i))))
+        .then((source) => queue.update(item.id, { source, status: 'ready' }))
         .catch(() => {
-          setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error' } : i)));
+          queue.update(item.id, { status: 'error' });
           notify(`Couldn't read ${item.file.name}.`, 'error');
         });
     }
   };
 
-  const updateItem = (id: string, patch: Partial<Item>) => setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
-
-  const removeItem = (id: string) =>
-    setItems((prev) => {
-      const gone = prev.find((i) => i.id === id);
-      if (gone?.source) URL.revokeObjectURL(gone.source.previewUrl);
-      if (gone?.result) URL.revokeObjectURL(gone.result.url);
-      return prev.filter((i) => i.id !== id);
-    });
-
   const clearAll = () => {
-    items.forEach((i) => {
-      if (i.source) URL.revokeObjectURL(i.source.previewUrl);
-      if (i.result) URL.revokeObjectURL(i.result.url);
-    });
-    setItems([]);
+    queue.clear();
     setArchive(null);
   };
 
   const sortBy = (key: SortKey) => {
     setSortAnchor(null);
-    setItems((prev) =>
-      [...prev].sort((a, b) => {
-        if (key === 'name') return a.file.name.localeCompare(b.file.name, undefined, { numeric: true });
-        if (key === 'size') return b.file.size - a.file.size;
-        const pa = a.source ? a.source.size.width * a.source.size.height : 0;
-        const pb = b.source ? b.source.size.width * b.source.size.height : 0;
-        return pb - pa;
-      }),
-    );
+    queue.sort((a, b) => {
+      if (key === 'name') return a.file.name.localeCompare(b.file.name, undefined, { numeric: true });
+      if (key === 'size') return b.file.size - a.file.size;
+      const pa = a.source ? a.source.size.width * a.source.size.height : 0;
+      const pb = b.source ? b.source.size.width * b.source.size.height : 0;
+      return pb - pa;
+    });
   };
 
   const formatFor = (file: File): OutputFormat => (saveAs === 'original' ? originalFormat(file) : saveAs);
@@ -257,7 +232,7 @@ export function ImageResize() {
         };
         if (out.missedTarget) missed++;
         finished.push(result);
-        updateItem(item.id, { result });
+        queue.update(item.id, { result });
         if (ready.length > 1) entries.push({ name, data: new Uint8Array(await out.blob.arrayBuffer()) });
       } catch (error) {
         failures++;
@@ -267,12 +242,12 @@ export function ImageResize() {
     }
 
     if (finished.length === 1 && ready.length === 1) {
-      downloadBlobUrl(finished[0].url, finished[0].name);
+      downloadUrl(finished[0].url, finished[0].name);
     } else if (entries.length) {
       const url = URL.createObjectURL(createTarBlob(entries));
       const name = `resized_${entries.length}_images.tar`;
       setArchive({ url, name });
-      downloadBlobUrl(url, name);
+      downloadUrl(url, name);
     }
     setProgress(null);
     if (!failures) {
@@ -289,22 +264,19 @@ export function ImageResize() {
     <Workbench panelWidth={340}>
       <Panel
         footer={
-          <>
-            {busy && <LinearProgress variant="determinate" value={progress ?? 0} />}
-            <Button
-              size="large"
-              onClick={runExport}
-              disabled={!ready.length || busy}
-              endIcon={busy ? <CircularProgress size={18} color="inherit" /> : <ArrowForwardRoundedIcon />}
-            >
-              {busy ? 'Exporting…' : ready.length > 1 ? `Export ${ready.length} images` : 'Export'}
-            </Button>
-            {archive && (
-              <Button variant="outlined" component="a" href={archive.url} download={archive.name} startIcon={<DownloadRoundedIcon />}>
-                Download all again (TAR)
-              </Button>
-            )}
-          </>
+          <ExportFooter
+            progress={busy ? progress : null}
+            primary={{
+              label: ready.length > 1 ? `Export ${ready.length} images` : 'Export',
+              icon: <ArrowForwardRoundedIcon />,
+              iconEnd: true,
+              busy,
+              busyLabel: 'Exporting…',
+              onClick: runExport,
+              disabled: !ready.length,
+            }}
+            secondary={archive && { href: archive.url, download: archive.name, label: 'Download all again (TAR)' }}
+          />
         }
       >
         {/* Queue toolbar */}
@@ -451,16 +423,14 @@ export function ImageResize() {
                       label={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Typography variant="body2">Color</Typography>
-                          <Box
-                            component="input"
-                            type="color"
+                          <ColorSwatchInput
+                            size={22}
                             value={fillColor}
                             aria-label="Background color"
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                              setFillColor(e.target.value);
+                            onChange={(color) => {
+                              setFillColor(color);
                               setFillKind('color');
                             }}
-                            sx={{ width: 28, height: 22, p: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'transparent', cursor: 'pointer' }}
                           />
                         </Box>
                       }
@@ -572,8 +542,8 @@ export function ImageResize() {
                 output={item.source ? planOutput(item.source.size, item.rotation, settings).canvas : null}
                 format={formatInfo(formatFor(item.file)).label}
                 disabled={busy}
-                onRotate={() => updateItem(item.id, { rotation: (((item.rotation + 90) % 360) as Rotation), result: null })}
-                onRemove={() => removeItem(item.id)}
+                onRotate={() => queue.update(item.id, (i) => ({ ...withoutResult(i), rotation: ((i.rotation + 90) % 360) as Rotation }))}
+                onRemove={() => queue.remove(item.id)}
               />
             ))}
             <FileButton

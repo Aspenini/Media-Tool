@@ -1,29 +1,26 @@
 import { useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
-import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
 import RadioRoundedIcon from '@mui/icons-material/RadioRounded';
 import MemoryRoundedIcon from '@mui/icons-material/MemoryRounded';
 import GraphicEqRoundedIcon from '@mui/icons-material/GraphicEqRounded';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
-import { DownloadButton } from '../components/DownloadButton';
+import { ExportFooter } from '../components/ExportFooter';
+import { FileQueueList } from '../components/FileQueueList';
 import { useNotification } from '../components/NotificationProvider';
 import { Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
 import { ChoiceCard } from '../components/controls';
+import { useFileQueue } from '../hooks/useFileQueue';
 import { getAudioContextClass } from '../lib/spatial';
 import { applyAudioEffect, AUDIO_EFFECTS, exportBitDepthFor, type AudioEffectId } from '../lib/audioEffects';
 import { audioBufferToWavBlob } from '../lib/wav';
 import { createTarBlob } from '../lib/tar';
 import { stripExtension } from '../lib/image';
-import { formatBytes } from '../lib/imageResize';
-import { MONO_FONT } from '../theme';
+import { formatBytes } from '../lib/format';
 
 const EFFECT_META: Record<AudioEffectId, { icon: typeof RadioRoundedIcon; blurb: string }> = {
   vintageRadio: { icon: RadioRoundedIcon, blurb: 'Band-limited, saturated, mono — a 1940s wireless set.' },
@@ -34,14 +31,15 @@ const EFFECT_META: Record<AudioEffectId, { icon: typeof RadioRoundedIcon; blurb:
 export function AudioEffects() {
   const notify = useNotification();
   const ctxRef = useRef<AudioContext | null>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const queue = useFileQueue();
+  const files = queue.items;
   const [effect, setEffect] = useState<AudioEffectId>('vintageRadio');
   const [progress, setProgress] = useState<number | null>(null);
   const [doneCount, setDoneCount] = useState(0);
   const [tar, setTar] = useState<{ url: string; name: string } | null>(null);
 
   const addFiles = (next: File[]) => {
-    setFiles((prev) => [...prev, ...next.filter((f) => !prev.some((p) => p.name === f.name && p.size === f.size))]);
+    queue.add(next);
     setTar(null);
     setDoneCount(0);
   };
@@ -60,12 +58,12 @@ export function AudioEffects() {
     try {
       const entries: { name: string; data: Uint8Array }[] = [];
       for (let i = 0; i < files.length; i++) {
-        const arrayBuffer = await files[i].arrayBuffer();
+        const arrayBuffer = await files[i].file.arrayBuffer();
         const input = await ctx.decodeAudioData(arrayBuffer.slice(0));
         const processed = await applyAudioEffect(ctx, input, effect);
         const wavBlob = audioBufferToWavBlob(processed, exportBitDepthFor(effect));
         const buf = await wavBlob.arrayBuffer();
-        entries.push({ name: `${stripExtension(files[i].name)}_${effect}.wav`, data: new Uint8Array(buf) });
+        entries.push({ name: `${stripExtension(files[i].file.name)}_${effect}.wav`, data: new Uint8Array(buf) });
         setDoneCount(i + 1);
         setProgress(Math.round(((i + 1) / files.length) * 100));
         await new Promise((r) => setTimeout(r, 10));
@@ -86,13 +84,18 @@ export function AudioEffects() {
     <Workbench panelWidth={360}>
       <Panel
         footer={
-          <>
-            {busy && <LinearProgress variant="determinate" value={progress ?? 0} />}
-            <Button size="large" onClick={process} disabled={!files.length || busy} startIcon={<AutoFixHighRoundedIcon />}>
-              {busy ? `Processing ${doneCount + 1} of ${files.length}…` : `Apply to ${files.length || 'no'} file${files.length === 1 ? '' : 's'}`}
-            </Button>
-            {tar && <DownloadButton variant="outlined" href={tar.url} download={tar.name} label="Download all (TAR)" />}
-          </>
+          <ExportFooter
+            progress={busy ? progress : null}
+            primary={{
+              label: `Apply to ${files.length || 'no'} file${files.length === 1 ? '' : 's'}`,
+              icon: <AutoFixHighRoundedIcon />,
+              busy,
+              busyLabel: `Processing ${doneCount + 1} of ${files.length}…`,
+              onClick: process,
+              disabled: !files.length,
+            }}
+            secondary={tar && { href: tar.url, download: tar.name, label: 'Download all (TAR)' }}
+          />
         }
       >
         <ToolIntro />
@@ -159,11 +162,11 @@ export function AudioEffects() {
               <Box>
                 <Typography variant="h5">Queue</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {files.length} file{files.length === 1 ? '' : 's'} · {formatBytes(files.reduce((n, f) => n + f.size, 0))} · WAV output
+                  {files.length} file{files.length === 1 ? '' : 's'} · {formatBytes(files.reduce((n, f) => n + f.file.size, 0))} · WAV output
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button variant="outlined" size="small" disabled={busy} onClick={() => { setFiles([]); setTar(null); }}>
+                <Button variant="outlined" size="small" disabled={busy} onClick={() => { queue.clear(); setTar(null); }}>
                   Clear
                 </Button>
                 <FileButton variant="outlined" size="small" multiple accept="audio/*" onFiles={addFiles} startIcon={<AddRoundedIcon />} disabled={busy}>
@@ -171,40 +174,12 @@ export function AudioEffects() {
                 </FileButton>
               </Box>
             </Box>
-            <Box sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', overflow: 'hidden' }}>
-              {files.map((f, i) => {
-                const done = i < doneCount;
-                const running = busy && i === doneCount;
-                return (
-                  <Box
-                    key={`${f.name}-${f.size}`}
-                    sx={{
-                      display: 'grid',
-                      gridTemplateColumns: '32px minmax(0, 1fr) auto auto',
-                      alignItems: 'center',
-                      gap: 1.5,
-                      px: 2,
-                      py: 1.25,
-                      borderTop: i ? '1px solid' : 0,
-                      borderColor: 'divider',
-                      position: 'relative',
-                    }}
-                  >
-                    <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem', color: 'text.secondary' }}>{String(i + 1).padStart(2, '0')}</Typography>
-                    <Typography variant="body2" noWrap sx={{ fontWeight: 550 }} title={f.name}>
-                      {f.name}
-                    </Typography>
-                    <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem', color: done ? 'primary.main' : 'text.secondary' }}>
-                      {done ? <CheckRoundedIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} /> : running ? 'working…' : formatBytes(f.size)}
-                    </Typography>
-                    <IconButton size="small" aria-label={`Remove ${f.name}`} disabled={busy} onClick={() => setFiles((prev) => prev.filter((p) => p !== f))}>
-                      <CloseRoundedIcon fontSize="small" />
-                    </IconButton>
-                    {running && <LinearProgress sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, borderRadius: 0 }} />}
-                  </Box>
-                );
-              })}
-            </Box>
+            <FileQueueList
+              items={files}
+              onRemove={queue.remove}
+              disabled={busy}
+              status={(_, i) => (i < doneCount ? 'done' : busy && i === doneCount ? 'running' : 'idle')}
+            />
           </Box>
         )}
       </Stage>

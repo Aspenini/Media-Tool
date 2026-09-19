@@ -16,8 +16,10 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
+import { ListenerHead } from '../components/ListenerHead';
 import { useNotification } from '../components/NotificationProvider';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { SliderField, SwitchRow } from '../components/controls';
 import {
   AZIMUTH_LEFT,
@@ -220,14 +222,18 @@ export function AudioHamburger() {
     <Workbench panelWidth={340}>
       <Panel
         footer={
-          <>
-            <Button size="large" variant="outlined" onClick={download} disabled={!tracks.length || exporting} startIcon={<DownloadRoundedIcon />}>
-              {exporting ? 'Rendering…' : 'Download mix (WAV)'}
-            </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
-              {status}
-            </Typography>
-          </>
+          <ExportFooter
+            primary={{
+              variant: 'outlined',
+              label: 'Download mix (WAV)',
+              icon: <DownloadRoundedIcon />,
+              busy: exporting,
+              busyLabel: 'Rendering…',
+              onClick: download,
+              disabled: !tracks.length,
+            }}
+            status={status}
+          />
         }
       >
         <ToolIntro />
@@ -494,12 +500,7 @@ function MapBackdrop() {
       <text x="99" y="50.8" fontSize="2.2" fontFamily={MONO_FONT} textAnchor="end" fill={ink} fillOpacity="0.45">
         R
       </text>
-      <g>
-        <ellipse cx="50" cy="50" rx="3.4" ry="3.9" fill={theme.palette.background.paper} stroke={ink} strokeOpacity="0.5" strokeWidth="0.35" />
-        <ellipse cx="46.3" cy="50" rx="0.8" ry="1.4" fill={ink} fillOpacity="0.5" />
-        <ellipse cx="53.7" cy="50" rx="0.8" ry="1.4" fill={ink} fillOpacity="0.5" />
-        <path d="M49 46.4 L50 45 L51 46.4" fill="none" stroke={ink} strokeOpacity="0.6" strokeWidth="0.35" />
-      </g>
+      <ListenerHead size={3.4} />
     </Box>
   );
 }

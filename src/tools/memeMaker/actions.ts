@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type Dispatch, type RefObject } from 'react';
 import sampleUrl from '../../assets/meme-sample.jpg';
+import { assetUrl } from '../../lib/assetUrl';
 import type { NotificationType } from '../../components/NotificationProvider';
 import { canvasToPng, copyPng, downloadBlob, extensionFor, recordVideo } from '../../lib/meme/export.ts';
 import { baseName, loadIconFile, loadMediaFile, loadMediaUrl } from '../../lib/meme/media.ts';
@@ -53,7 +54,7 @@ export function useEditorActions(options: {
 
   const openFile = useCallback((file: File) => load(() => loadMediaFile(file), "Couldn't open that file."), [load]);
 
-  const openSample = useCallback(() => load(() => loadMediaUrl(sampleUrl, 'sample.jpg'), "Couldn't load the sample."), [load]);
+  const openSample = useCallback(() => load(() => loadMediaUrl(assetUrl(sampleUrl), 'sample.jpg'), "Couldn't load the sample."), [load]);
 
   const addIconFile = useCallback(
     async (file: File) => {

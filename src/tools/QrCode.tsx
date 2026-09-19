@@ -7,10 +7,10 @@ import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
 import { Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
-import { FieldLabel, Segmented, SliderField } from '../components/controls';
+import { ExportFooter } from '../components/ExportFooter';
+import { ColorField, FieldLabel, Segmented, SliderField } from '../components/controls';
 import { MONO_FONT } from '../theme';
 
 type Ecl = 'L' | 'M' | 'Q' | 'H';
@@ -105,13 +105,8 @@ export function QrCodeTool() {
     <Workbench panelWidth={360}>
       <Panel
         footer={
-          <DownloadButton
-            size="large"
-            fullWidth
-            href={download?.url ?? ''}
-            download={download?.name ?? ''}
-            disabled={!download || !hasCode}
-            label={`Download ${format.toUpperCase()}`}
+          <ExportFooter
+            primary={{ href: download?.url ?? '', download: download?.name, disabled: !download || !hasCode, label: `Download ${format.toUpperCase()}` }}
           />
         }
       >
@@ -211,42 +206,5 @@ export function QrCodeTool() {
         </Box>
       </Stage>
     </Workbench>
-  );
-}
-
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <Box
-      component="label"
-      sx={{
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.25,
-        p: 1,
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        cursor: 'pointer',
-        '&:hover': { borderColor: 'text.secondary' },
-        '&:focus-within': { borderColor: 'primary.main' },
-      }}
-    >
-      <Box sx={{ width: 28, height: 28, borderRadius: 1.5, bgcolor: value, boxShadow: 'inset 0 0 0 1px rgba(127,127,127,0.35)', flexShrink: 0 }} />
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
-          {label}
-        </Typography>
-        <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.8rem' }}>{value.toUpperCase()}</Typography>
-      </Box>
-      <Box
-        component="input"
-        type="color"
-        value={value}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-        aria-label={label}
-        sx={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
-      />
-    </Box>
   );
 }

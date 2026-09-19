@@ -1,4 +1,5 @@
 import { audioBufferToWavBlob } from './wav';
+import { downloadBlob } from './download';
 import { getAudioContextClass, resetListener, sanitizeFileName, type DistanceModel } from './spatial';
 
 export interface OrbitalParams {
@@ -298,12 +299,7 @@ export class OrbitalEngine {
 
     const rendered = await offline.startRendering();
     const blob = audioBufferToWavBlob(rendered);
-    const a = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    a.href = url;
-    a.download = `${this.fileName}_3d.wav`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${this.fileName}_3d.wav`);
   }
 
   dispose(): void {

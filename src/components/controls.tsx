@@ -209,3 +209,87 @@ export function Stat({ label, value, accent }: { label: ReactNode; value: ReactN
     </Box>
   );
 }
+
+interface ColorSwatchInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  'aria-label': string;
+  /** Show a rainbow instead of the current color (when presets already show it). */
+  rainbow?: boolean;
+  size?: number;
+}
+
+/** A round swatch that opens the system color picker. */
+export function ColorSwatchInput({ value, onChange, rainbow, size = 28, ...aria }: ColorSwatchInputProps) {
+  return (
+    <Box
+      component="label"
+      sx={(theme) => ({
+        position: 'relative',
+        display: 'block',
+        flexShrink: 0,
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        cursor: 'pointer',
+        background: rainbow ? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' : value,
+        border: '1px solid',
+        borderColor: 'divider',
+        '&:focus-within': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
+      })}
+    >
+      <Box
+        component="input"
+        type="color"
+        value={value}
+        aria-label={aria['aria-label']}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
+        sx={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', p: 0, border: 0 }}
+      />
+    </Box>
+  );
+}
+
+interface ColorFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  /** Quick-pick swatches shown before the custom picker. */
+  presets?: readonly string[];
+}
+
+/** Labeled color control: optional preset swatches plus a custom picker. */
+export function ColorField({ label, value, onChange, presets }: ColorFieldProps) {
+  return (
+    <Box>
+      <FieldLabel value={value.toUpperCase()}>{label}</FieldLabel>
+      <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+        {presets?.map((color) => {
+          const selected = color.toLowerCase() === value.toLowerCase();
+          return (
+            <ButtonBase
+              key={color}
+              aria-label={`${label} ${color}`}
+              aria-pressed={selected}
+              onClick={() => onChange(color)}
+              sx={(theme) => ({
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                bgcolor: color,
+                border: '1px solid',
+                borderColor: 'divider',
+                boxShadow: selected ? `0 0 0 2px ${theme.palette.background.paper}, 0 0 0 4px ${theme.palette.primary.main}` : 'none',
+              })}
+            />
+          );
+        })}
+        <Tooltip title="Custom color">
+          <span style={{ display: 'block' }}>
+            <ColorSwatchInput value={value} onChange={onChange} rainbow={!!presets?.length} aria-label={`Custom ${label.toLowerCase()}`} />
+          </span>
+        </Tooltip>
+      </Box>
+    </Box>
+  );
+}

@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography';
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
 import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import logoUrl from '../../public/img/favicon.svg';
+import { APP_ICON_URL } from '../branding';
 import { TOOLS, type ToolDef } from '../toolRegistry';
 import type { ThemeMode } from '../theme';
 
@@ -30,7 +30,7 @@ export function AppTabs({ active, onSelect, mode, onToggleMode }: AppTabsProps) 
   return (
     <AppBar position="static" color="inherit" elevation={0} sx={{ bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
       <Toolbar variant="dense" sx={{ gap: 1.25, minHeight: 52, px: { xs: 1.5, sm: 2 } }}>
-        <Box component="img" src={logoUrl} alt="" sx={{ width: 26, height: 26 }} />
+        <Box component="img" src={APP_ICON_URL} alt="" sx={{ width: 26, height: 26 }} />
         <Typography variant="h6" component="h1" sx={{ fontSize: '1.05rem', flexGrow: 1 }}>
           Aspenini Media Tool
         </Typography>

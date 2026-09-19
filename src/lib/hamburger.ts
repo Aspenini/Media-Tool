@@ -1,4 +1,5 @@
 import { audioBufferToWavBlob } from './wav';
+import { downloadBlob } from './download';
 import { getAudioContextClass, resetListener, sanitizeFileName, worldFromPan } from './spatial';
 
 export const MIN_PAN_DIST = 0.82;
@@ -266,12 +267,7 @@ export class HamburgerEngine {
       const rendered = await offline.startRendering();
       const blob = audioBufferToWavBlob(rendered);
       const base = sanitizeFileName(playable[0].name, 'hamburger-mix');
-      const a = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      a.href = url;
-      a.download = `${base}_hamburger_3d.wav`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${base}_hamburger_3d.wav`);
     } finally {
       if (closeDecodeCtx) {
         try {

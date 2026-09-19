@@ -4,13 +4,12 @@ import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import PaletteRoundedIcon from '@mui/icons-material/PaletteRounded';
 import { FileDropZone } from '../components/FileDropZone';
-import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
-import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../components/Workbench';
+import { Panel, PanelSection, Stage, StageDock, StageTag, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { ChoiceCard, FieldLabel, Segmented } from '../components/controls';
 import { loadImageFromFile, stripExtension } from '../lib/image';
 import { PALETTES, renderPalette, type ColorMatching, type DitheringMode } from '../lib/palette';
-import { MONO_FONT } from '../theme';
 
 const DITHER_OPTIONS: { value: DitheringMode; label: string; title: string }[] = [
   { value: 'none', label: 'None', title: 'No dithering' },
@@ -93,7 +92,7 @@ export function Palette() {
     <Workbench panelWidth={350}>
       <Panel
         footer={
-          <DownloadButton size="large" fullWidth href={download?.url ?? ''} download={download?.name ?? ''} disabled={!download} label="Download converted PNG" />
+          <ExportFooter primary={{ href: download?.url ?? '', download: download?.name, disabled: !download, label: 'Download converted PNG' }} />
         }
       >
         <ToolIntro />
@@ -257,33 +256,8 @@ function CompareSlider({ split, onSplit, children }: { split: number; onSplit: (
           ⇆
         </Box>
       </Box>
-      <Tag side="left">Original</Tag>
-      <Tag side="right">Palette</Tag>
-    </Box>
-  );
-}
-
-function Tag({ side, children }: { side: 'left' | 'right'; children: React.ReactNode }) {
-  return (
-    <Box
-      sx={{
-        position: 'absolute',
-        top: 10,
-        [side]: 10,
-        px: 1,
-        py: 0.5,
-        borderRadius: 1.5,
-        bgcolor: 'rgba(0,0,0,0.6)',
-        color: '#fff',
-        fontFamily: MONO_FONT,
-        fontSize: '0.68rem',
-        lineHeight: 1.2,
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
-        pointerEvents: 'none',
-      }}
-    >
-      {children}
+      <StageTag corner="top-left">Original</StageTag>
+      <StageTag corner="top-right">Palette</StageTag>
     </Box>
   );
 }

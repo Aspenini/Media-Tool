@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
-import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
-import { alpha } from '@mui/material/styles';
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import InventoryRoundedIcon from '@mui/icons-material/InventoryRounded';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
-import { DownloadButton } from '../components/DownloadButton';
+import { ExportFooter } from '../components/ExportFooter';
+import { FileQueueList } from '../components/FileQueueList';
+import { useFileQueue } from '../hooks/useFileQueue';
 import { useNotification } from '../components/NotificationProvider';
 import { Artboard, Panel, PanelSection, Stage, StageTag, ToolIntro, Workbench } from '../components/Workbench';
 import { canvasToPngBlob, renderCsvTable } from '../lib/csv';
@@ -27,8 +23,9 @@ interface Preview {
 
 export function Csv() {
   const notify = useNotification();
-  const [files, setFiles] = useState<File[]>([]);
-  const [selected, setSelected] = useState(0);
+  const queue = useFileQueue();
+  const files = queue.items;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [tar, setTar] = useState<{ url: string; name: string } | null>(null);
@@ -39,14 +36,11 @@ export function Csv() {
       notify('Those don’t look like CSV files.', 'error');
       return;
     }
-    setFiles((prev) => {
-      if (!prev.length) setSelected(0);
-      return [...prev, ...csvs.filter((f) => !prev.some((p) => p.name === f.name && p.size === f.size))];
-    });
+    queue.add(csvs);
     setTar(null);
   };
 
-  const current = files[Math.min(selected, files.length - 1)];
+  const current = files.find((f) => f.id === selectedId) ?? files[0];
 
   // Render the selected file straight away — the stage is the preview.
   useEffect(() => {
@@ -58,11 +52,11 @@ export function Csv() {
     let url: string | null = null;
     (async () => {
       try {
-        const canvas = renderCsvTable(await current.text());
+        const canvas = renderCsvTable(await current.file.text());
         const blob = await canvasToPngBlob(canvas);
         if (cancelled) return;
         url = blob ? URL.createObjectURL(blob) : canvas.toDataURL('image/png');
-        setPreview({ url, name: `${stripExtension(current.name)}_table.png`, width: canvas.width, height: canvas.height });
+        setPreview({ url, name: `${stripExtension(current.file.name)}_table.png`, width: canvas.width, height: canvas.height });
       } catch (e) {
         if (!cancelled) notify('Error rendering CSV: ' + (e instanceof Error ? e.message : String(e)), 'error');
       }
@@ -79,12 +73,12 @@ export function Csv() {
     const entries: { name: string; data: Uint8Array }[] = [];
     for (let i = 0; i < files.length; i++) {
       try {
-        const canvas = renderCsvTable(await files[i].text());
+        const canvas = renderCsvTable(await files[i].file.text());
         const blob = await canvasToPngBlob(canvas);
         const buf = blob ? await blob.arrayBuffer() : new ArrayBuffer(0);
-        entries.push({ name: `${stripExtension(files[i].name)}_table.png`, data: new Uint8Array(buf) });
+        entries.push({ name: `${stripExtension(files[i].file.name)}_table.png`, data: new Uint8Array(buf) });
       } catch (e) {
-        console.warn('Skipping CSV file:', files[i].name, e);
+        console.warn('Skipping CSV file:', files[i].file.name, e);
       }
       setProgress(Math.round(((i + 1) / files.length) * 100));
       await new Promise((r) => setTimeout(r, 10));
@@ -94,9 +88,8 @@ export function Csv() {
     notify(`${entries.length} table image(s) archived.`, 'success');
   };
 
-  const remove = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setSelected((s) => (s >= index && s > 0 ? s - 1 : s));
+  const remove = (id: string) => {
+    queue.remove(id);
     setTar(null);
   };
 
@@ -104,18 +97,16 @@ export function Csv() {
     <Workbench panelWidth={320}>
       <Panel
         footer={
-          <>
-            {progress !== null && <LinearProgress variant="determinate" value={progress} />}
-            <DownloadButton size="large" href={preview?.url ?? ''} download={preview?.name ?? ''} disabled={!preview} label="Download this table" />
-            {files.length > 1 &&
-              (tar ? (
-                <DownloadButton variant="outlined" href={tar.url} download={tar.name} label={`Download all ${files.length} (TAR)`} />
-              ) : (
-                <Button variant="outlined" onClick={exportAll} disabled={progress !== null} startIcon={<InventoryRoundedIcon />}>
-                  Archive all {files.length}
-                </Button>
-              ))}
-          </>
+          <ExportFooter
+            progress={progress}
+            primary={{ href: preview?.url ?? '', download: preview?.name, disabled: !preview, label: 'Download this table' }}
+            secondary={
+              files.length > 1 &&
+              (tar
+                ? { href: tar.url, download: tar.name, label: `Download all ${files.length} (TAR)` }
+                : { label: `Archive all ${files.length}`, icon: <InventoryRoundedIcon />, onClick: exportAll, busy: progress !== null })
+            }
+          />
         }
       >
         <ToolIntro />
@@ -132,45 +123,7 @@ export function Csv() {
           {files.length === 0 ? (
             <FileDropZone multiple accept=".csv,text/csv" title="Choose CSV files" hint="One or many" onFiles={addFiles} />
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              {files.map((f, i) => {
-                const active = f === current;
-                return (
-                  <Box
-                    key={`${f.name}-${f.size}`}
-                    onClick={() => setSelected(i)}
-                    sx={(theme) => ({
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      pl: 1.25,
-                      pr: 0.25,
-                      py: 0.5,
-                      borderRadius: 2,
-                      cursor: 'pointer',
-                      bgcolor: active ? alpha(theme.palette.primary.main, 0.12) : 'transparent',
-                      color: active ? 'primary.main' : 'text.primary',
-                      '&:hover': { bgcolor: active ? undefined : 'action.hover' },
-                    })}
-                  >
-                    <TableChartRoundedIcon sx={{ fontSize: 16 }} />
-                    <Typography variant="body2" noWrap sx={{ flex: 1, fontWeight: active ? 650 : 500 }}>
-                      {f.name}
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      aria-label={`Remove ${f.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        remove(i);
-                      }}
-                    >
-                      <CloseRoundedIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                  </Box>
-                );
-              })}
-            </Box>
+            <FileQueueList items={files} selectedId={current?.id} onSelect={setSelectedId} onRemove={remove} meta={() => null} />
           )}
         </PanelSection>
       </Panel>
@@ -193,7 +146,7 @@ export function Csv() {
           />
         ) : preview ? (
           <Artboard sx={{ bgcolor: '#fff', backgroundImage: 'none' }}>
-            <img src={preview.url} alt={`Table rendered from ${current?.name}`} />
+            <img src={preview.url} alt={`Table rendered from ${current?.file.name}`} />
           </Artboard>
         ) : (
           <Typography sx={{ fontFamily: MONO_FONT, color: 'text.secondary' }}>rendering…</Typography>

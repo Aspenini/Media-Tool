@@ -9,6 +9,7 @@ import { useFileDrag } from '../components/FileDropZone';
 import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
 import { Artboard, Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
+import { ExportFooter } from '../components/ExportFooter';
 import { ChoiceCard, SwitchRow } from '../components/controls';
 import { drawDiagonalSlice, extractNumber, loadImageFromFile, type DiagonalDirection } from '../lib/image';
 import { MONO_FONT } from '../theme';
@@ -93,9 +94,14 @@ export function Slicer() {
     <Workbench panelWidth={320}>
       <Panel
         footer={
-          <Button size="large" onClick={handleGenerate} disabled={!slotA || !slotB} startIcon={<ContentCutRoundedIcon />}>
-            Slice {allDirections ? '4 variants' : 'image'}
-          </Button>
+          <ExportFooter
+            primary={{
+              label: `Slice ${allDirections ? '4 variants' : 'image'}`,
+              icon: <ContentCutRoundedIcon />,
+              onClick: handleGenerate,
+              disabled: !slotA || !slotB,
+            }}
+          />
         }
       >
         <ToolIntro />

@@ -12,6 +12,7 @@ import SouthRoundedIcon from '@mui/icons-material/SouthRounded';
 import { useNotification } from '../components/NotificationProvider';
 import { useTool } from '../components/Workbench';
 import { runBrainfuck, stripBrainfuck, textToBrainfuck } from '../lib/brainfuck';
+import { downloadBlob } from '../lib/download';
 import { MONO_FONT } from '../theme';
 
 export function Brainfuck() {
@@ -42,13 +43,7 @@ export function Brainfuck() {
       notify('No code to download!', 'error');
       return;
     }
-    const blob = new Blob([encoded], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'brainfuck_code.bf';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([encoded], { type: 'text/plain' }), 'brainfuck_code.bf');
   };
 
   const run = (source = decodeInput) => {
