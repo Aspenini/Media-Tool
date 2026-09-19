@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import { useIncomingFiles } from '../components/FileBridge';
+import { SendToButton } from '../components/SendToButton';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { ExportFooter } from '../components/ExportFooter';
 import { FileQueueList } from '../components/FileQueueList';
@@ -10,7 +13,7 @@ import { useFileQueue } from '../hooks/useFileQueue';
 import { useNotification } from '../components/NotificationProvider';
 import { Artboard, Panel, PanelSection, Stage, StageTag, ToolIntro, Workbench } from '../components/Workbench';
 import { canvasToPngBlob, renderCsvTable } from '../lib/csv';
-import { downloadEach, type DownloadItem } from '../lib/download';
+import { downloadEach, fileFromUrl, type DownloadItem } from '../lib/download';
 import { stripExtension } from '../lib/image';
 import { MONO_FONT } from '../theme';
 
@@ -37,6 +40,8 @@ export function Csv() {
     }
     queue.add(csvs);
   };
+
+  useIncomingFiles(addFiles);
 
   const current = files.find((f) => f.id === selectedId) ?? files[0];
 
@@ -140,9 +145,12 @@ export function Csv() {
             onFiles={addFiles}
           />
         ) : preview ? (
-          <Artboard sx={{ bgcolor: '#fff', backgroundImage: 'none' }}>
-            <img src={preview.url} alt={`Table rendered from ${current?.file.name}`} />
-          </Artboard>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <Artboard sx={{ bgcolor: '#fff', backgroundImage: 'none' }}>
+              <img src={preview.url} alt={`Table rendered from ${current?.file.name}`} />
+            </Artboard>
+            <SendToButton kind="image" getFile={() => fileFromUrl(preview.url, preview.name)} />
+          </Box>
         ) : (
           <Typography sx={{ fontFamily: MONO_FONT, color: 'text.secondary' }}>rendering…</Typography>
         )}

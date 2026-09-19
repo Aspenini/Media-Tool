@@ -1,5 +1,4 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -8,6 +7,8 @@ import { ThemeProvider } from '@mui/material/styles';
 import { APP_ACCENT, getTheme, type ThemeMode } from './theme';
 import { NotificationProvider } from './components/NotificationProvider';
 import { ToolProvider } from './components/Workbench';
+import { ToolErrorBoundary } from './components/ToolErrorBoundary';
+import { FileBridgeProvider } from './components/FileBridge';
 import { AppTabs } from './components/AppTabs';
 import { useHashRoute } from './hooks/useHashRoute';
 import { TOOLS, toolByHash, type ToolDef } from './toolRegistry';
@@ -74,29 +75,43 @@ export function App() {
     <ThemeProvider theme={appTheme}>
       <CssBaseline enableColorScheme />
       <NotificationProvider>
-        <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <AppTabs active={tool} onSelect={selectTool} mode={preferredMode} onToggleMode={toggleMode} />
-          <ThemeProvider theme={toolTheme}>
-            <ScopedCssBaseline
-              enableColorScheme
-              component={motion.main}
-              key={tool.id}
-              id="tool-panel"
-              role="tabpanel"
-              aria-labelledby={`tab-${tool.id}`}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
-            >
-              <ToolProvider value={tool}>
-                <Suspense fallback={<ToolLoading />}>
-                  <tool.Component />
-                </Suspense>
-              </ToolProvider>
-            </ScopedCssBaseline>
-          </ThemeProvider>
-        </Box>
+        <FileBridgeProvider open={tool} onOpenTool={selectTool}>
+          <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <AppTabs active={tool} onSelect={selectTool} mode={preferredMode} onToggleMode={toggleMode} />
+            <ThemeProvider theme={toolTheme}>
+              <ScopedCssBaseline
+                enableColorScheme
+                component="main"
+                key={tool.id}
+                id="tool-panel"
+                role="tabpanel"
+                aria-labelledby={`tab-${tool.id}`}
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflowY: 'auto',
+                  // A plain CSS fade-in; the key above restarts it on every tool switch.
+                  animation: 'tool-enter 240ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  '@keyframes tool-enter': {
+                    from: { opacity: 0, transform: 'translateY(6px)' },
+                    to: { opacity: 1, transform: 'none' },
+                  },
+                  '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+                }}
+              >
+                <ToolProvider value={tool}>
+                  <ToolErrorBoundary toolName={tool.name}>
+                    <Suspense fallback={<ToolLoading />}>
+                      <tool.Component />
+                    </Suspense>
+                  </ToolErrorBoundary>
+                </ToolProvider>
+              </ScopedCssBaseline>
+            </ThemeProvider>
+          </Box>
+        </FileBridgeProvider>
       </NotificationProvider>
     </ThemeProvider>
   );

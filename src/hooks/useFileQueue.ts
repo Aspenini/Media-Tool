@@ -24,6 +24,8 @@ export interface FileQueue<T extends QueuedFile> {
   /** Rewrite every item (e.g. to drop stale results). */
   updateAll(map: (item: T) => T): void;
   sort(compare: (a: T, b: T) => number): void;
+  /** Move an item up or down the list. */
+  move(id: string, delta: -1 | 1): void;
 }
 
 let nextId = 0;
@@ -94,5 +96,18 @@ export function useFileQueue<T extends QueuedFile = QueuedFile>(options: FileQue
 
   const sort = useCallback((compare: (a: T, b: T) => number) => commit([...itemsRef.current].sort(compare)), [commit]);
 
-  return { items, add, remove, clear, update, updateAll, sort };
+  const move = useCallback(
+    (id: string, delta: -1 | 1) => {
+      const current = itemsRef.current;
+      const from = current.findIndex((item) => item.id === id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= current.length) return;
+      const next = [...current];
+      [next[from], next[to]] = [next[to], next[from]];
+      commit(next);
+    },
+    [commit],
+  );
+
+  return { items, add, remove, clear, update, updateAll, sort, move };
 }

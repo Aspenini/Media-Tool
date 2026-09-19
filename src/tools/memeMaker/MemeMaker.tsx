@@ -30,6 +30,7 @@ import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import VolumeOffRoundedIcon from '@mui/icons-material/VolumeOffRounded';
 import VolumeUpRoundedIcon from '@mui/icons-material/VolumeUpRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import { useIncomingFiles } from '../../components/FileBridge';
 import { FileButton, FileDropZone } from '../../components/FileDropZone';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../../components/Workbench';
 import { ExportFooter } from '../../components/ExportFooter';
@@ -84,16 +85,13 @@ function Studio() {
   );
 }
 
-/** Paste to load, Ctrl/⌘ S to export, Ctrl/⌘ O to open — while this tool is open. */
+/** Ctrl/⌘ S exports and Ctrl/⌘ O opens a file — while this tool is open. */
 function useShortcuts() {
   const { openFile, exportMedia, busy } = useEditor();
+  useIncomingFiles((files) => {
+    if (!busy) void openFile(files[0]);
+  });
   useEffect(() => {
-    const onPaste = (event: ClipboardEvent) => {
-      const file = event.clipboardData?.files[0];
-      if (!file || busy) return;
-      event.preventDefault();
-      void openFile(file);
-    };
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
       const key = event.key.toLowerCase();
@@ -105,13 +103,9 @@ function useShortcuts() {
         document.querySelector<HTMLInputElement>('#meme-media-input')?.click();
       }
     };
-    window.addEventListener('paste', onPaste);
     window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('paste', onPaste);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [openFile, exportMedia, busy]);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [exportMedia, busy]);
 }
 
 /* ------------------------------------------------------------------ *

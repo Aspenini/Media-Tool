@@ -13,9 +13,9 @@ Built with **React + TypeScript + Material UI**, bundled and served by **Bun**. 
 - **Image Resize & Convert**: Resize to any dimensions with aspect-ratio locking and convert between PNG, JPEG, WebP, AVIF, TIFF, BMP and GIF. The browser handles common formats instantly; ImageMagick (WebAssembly) loads on demand for formats it cannot read or write, such as TIFF and PSD.
 - **PixelSnap POT**: Clean up messy pixel-style images by snapping them to a pixel grid, reducing the palette, and exporting sharp power-of-two PNGs for game engines (Godot/Unity/Unreal).
 - **Slicer Tool**: Diagonally slice and combine two images with pixel precision.
-- **Audio Effects**: Apply a 1940s-1950s vintage radio sound or 8-/16-bit bitcrushing to one or many files, exported as a TAR archive of WAVs.
-- **Color Palette**: Apply retro color palettes (8-bit, NES, Game Boy, PICO-8, etc.) to images, with multiple dithering algorithms.
-- **CSV to Image**: Convert CSV data to styled table images (batch export to TAR).
+- **Audio Effects**: Apply a 1940s-1950s vintage radio sound or 8-/16-bit bitcrushing to one or many files. Compare each file before and after in the browser, then download the WAVs.
+- **Color Palette**: Apply retro color palettes (3-3-2 RGB, the VGA BIOS default, NES, Game Boy, PICO-8, etc.) to images, with multiple dithering algorithms. Drag across the preview to compare before and after.
+- **CSV to Image**: Convert CSV data to styled table images; preview each one and download them as separate PNGs.
 - **QR Code Generator**: Generate customizable QR codes with ECL, size, margin, and color options (PNG or SVG).
 - **Brainfuck**: Encode text into Brainfuck, or run Brainfuck code in a built-in interpreter.
 - **PAGNAI**: Procedural audio generation using mathematical waveform synthesis.
@@ -24,7 +24,10 @@ Built with **React + TypeScript + Material UI**, bundled and served by **Bun**. 
 - **Credits Crawl**: Build an end-credits scroll and export it as a WebM video.
 - **360° Image Viewer**: View equirectangular, cylindrical, or cube-map panoramas (powered by three.js).
 - **SVG Dissect**: Inspect an SVG's layer tree, identify and select shapes, drag elements independently, and reset their positions.
-- **Modern UI**: Material UI with light/dark mode, scrollable tabs, and fluid animations.
+- **Meme Maker**: Caption a photo or clip — on the media or in a bar above it — with little icons tucked into the words. Exports PNG, or WebM/MP4 with audio.
+- **Modern UI**: Material UI with light/dark mode and a tab per tool. Each tool has its own accent colour, and its settings are remembered between visits.
+- **Works together**: hand a result straight to another tool with *Open in…*, or paste a file into whichever tool is open.
+- **Installable and offline**: a service worker caches the app after the first visit, so it keeps working with no connection.
 
 ## Development
 
@@ -34,6 +37,8 @@ Requires [Bun](https://bun.sh) (v1.3+).
 bun install
 bun run dev
 ```
+
+Other scripts: `bun run typecheck`, `bun test`, `bun run build`.
 
 Open http://localhost:3000 (Bun's HTML dev server, with hot reload).
 
@@ -60,13 +65,14 @@ index.html            # Minimal root + <script src="src/main.tsx">
 build.ts              # Bun production build (Bun.build + copy public/)
 public/               # Static assets copied verbatim into dist/ (CNAME, img/)
 src/
-├── main.tsx          # React root (ThemeProvider, CssBaseline, NotificationProvider)
-├── App.tsx           # AppBar + scrollable tabs + animated panels + footer
-├── theme.ts          # MUI light/dark theme
-├── toolRegistry.tsx  # Single source of truth for tools (id, hash, label, icon, component)
-├── hooks/            # useHashTab (deep-link hashes)
-├── components/       # Reusable UI (ToolShell, FileDropZone, PreviewSurface, ...)
-├── lib/              # Framework-agnostic logic (image, audio, palette, tar, wav, ...)
+├── main.tsx          # React root (icons, service worker, <App />)
+├── App.tsx           # App bar + tool tabs + the open tool's workspace
+├── theme.ts          # MUI theme: one for the app chrome, one per tool
+├── toolRegistry.tsx  # Single source of truth for tools (id, hash, name, icon, accent, ...)
+├── hooks/            # useHashRoute, useFileQueue, usePersistentState
+├── components/       # Shared UI tools may use (Workbench, FileDropZone, ExportFooter, ...)
+├── lib/              # Framework-agnostic logic (image, audio, palette, meme, wav, ...)
+│   └── *Kernel.ts    # Pure pixel crunching, run in a worker via lib/offThread.ts
 └── tools/            # One React component per tool
 ```
 

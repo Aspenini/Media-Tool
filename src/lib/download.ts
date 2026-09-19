@@ -33,3 +33,9 @@ export async function downloadEach(items: readonly DownloadItem[]): Promise<void
     if (i < items.length - 1) await new Promise((r) => setTimeout(r, DOWNLOAD_GAP_MS));
   }
 }
+
+/** Re-read an object URL as a File, for handing a result to another tool. */
+export async function fileFromUrl(url: string, name: string): Promise<File> {
+  const blob = await (await fetch(url)).blob();
+  return new File([blob], name, { type: blob.type });
+}

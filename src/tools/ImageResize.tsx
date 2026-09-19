@@ -30,8 +30,11 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import { useIncomingFiles } from '../components/FileBridge';
+import { SendToButton } from '../components/SendToButton';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Panel, PanelSection, Stage, Workbench, backdrop, useTool } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { ColorSwatchInput, FieldLabel, Segmented } from '../components/controls';
@@ -48,7 +51,7 @@ import {
   type Rotation,
 } from '../lib/batchResize';
 import { useFileQueue } from '../hooks/useFileQueue';
-import { downloadEach } from '../lib/download';
+import { downloadEach, fileFromUrl } from '../lib/download';
 import { MONO_FONT } from '../theme';
 
 const ACCEPT = 'image/*,.tif,.tiff,.psd,.tga,.dds';
@@ -110,23 +113,23 @@ export function ImageResize() {
   const items = queue.items;
 
   // Resize settings
-  const [mode, setMode] = useState<ResizeMode>('size');
-  const [width, setWidth] = useState('');
-  const [height, setHeight] = useState('');
-  const [lockAspect, setLockAspect] = useState(true);
-  const [percent, setPercent] = useState(50);
-  const [presetId, setPresetId] = useState(SOCIAL_PRESETS[0].id);
-  const [fit, setFit] = useState<FitMode>('pad');
-  const [fillKind, setFillKind] = useState<'transparent' | 'color'>('transparent');
-  const [fillColor, setFillColor] = useState('#ffffff');
+  const [mode, setMode] = usePersistentState<ResizeMode>('mode', 'size');
+  const [width, setWidth] = usePersistentState('width', '');
+  const [height, setHeight] = usePersistentState('height', '');
+  const [lockAspect, setLockAspect] = usePersistentState('lockAspect', true);
+  const [percent, setPercent] = usePersistentState('percent', 50);
+  const [presetId, setPresetId] = usePersistentState('presetId', SOCIAL_PRESETS[0].id);
+  const [fit, setFit] = usePersistentState<FitMode>('fit', 'pad');
+  const [fillKind, setFillKind] = usePersistentState<'transparent' | 'color'>('fillKind', 'transparent');
+  const [fillColor, setFillColor] = usePersistentState('fillColor', '#ffffff');
 
   // Export settings
-  const [exportOpen, setExportOpen] = useState(true);
-  const [saveAs, setSaveAs] = useState<SaveAs>('original');
-  const [quality, setQuality] = useState(90);
-  const [targetSize, setTargetSize] = useState('');
-  const [targetUnit, setTargetUnit] = useState<'KB' | 'MB'>('KB');
-  const [pixelArt, setPixelArt] = useState(false);
+  const [exportOpen, setExportOpen] = usePersistentState('exportOpen', true);
+  const [saveAs, setSaveAs] = usePersistentState<SaveAs>('saveAs', 'original');
+  const [quality, setQuality] = usePersistentState('quality', 90);
+  const [targetSize, setTargetSize] = usePersistentState('targetSize', '');
+  const [targetUnit, setTargetUnit] = usePersistentState<'KB' | 'MB'>('targetUnit', 'KB');
+  const [pixelArt, setPixelArt] = usePersistentState('pixelArt', false);
 
   const [progress, setProgress] = useState<number | null>(null);
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
@@ -163,6 +166,8 @@ export function ImageResize() {
         });
     }
   };
+
+  useIncomingFiles(addFiles);
 
   const clearAll = () => {
     queue.clear();
@@ -667,6 +672,7 @@ function ImageCard({ item, output, format, disabled, onRotate, onRemove }: Image
               {format} · {formatBytes(result.bytes)}
               {result.missedTarget && ' · over target'}
             </Typography>
+            <SendToButton kind="image" compact getFile={() => fileFromUrl(result.url, result.name)} />
             <Tooltip title={`Download ${result.name}`}>
               <IconButton size="small" component="a" href={result.url} download={result.name} aria-label={`Download ${result.name}`}>
                 <DownloadRoundedIcon fontSize="small" />

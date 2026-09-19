@@ -13,10 +13,12 @@ import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
+import { useIncomingFiles } from '../components/FileBridge';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { ExportFooter } from '../components/ExportFooter';
 import { FileQueueList } from '../components/FileQueueList';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
 import { ChoiceCard } from '../components/controls';
 import { useFileQueue, type QueuedFile } from '../hooks/useFileQueue';
@@ -100,13 +102,15 @@ export function AudioEffects() {
   });
   const tracks = queue.items;
   const player = usePreviewPlayer();
-  const [effect, setEffect] = useState<AudioEffectId>('vintageRadio');
+  const [effect, setEffect] = usePersistentState<AudioEffectId>('effect', 'vintageRadio');
   const [runningId, setRunningId] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
   const busy = progress !== null;
   const finished = tracks.filter((t) => t.result);
   const pending = tracks.length - finished.length;
+
+  useIncomingFiles(queue.add);
 
   const chooseEffect = (next: AudioEffectId) => {
     setEffect(next);

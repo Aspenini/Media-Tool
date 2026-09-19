@@ -9,6 +9,7 @@ import GraphicEqRoundedIcon from '@mui/icons-material/GraphicEqRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import StopRoundedIcon from '@mui/icons-material/StopRounded';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { FieldLabel, Segmented, SliderField, SwitchRow } from '../components/controls';
@@ -49,13 +50,13 @@ export function Pagnai() {
   const bufferRef = useRef<AudioBuffer | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
-  const [waveType, setWaveType] = useState<WaveType>('sine');
-  const [frequency, setFrequency] = useState(440);
-  const [duration, setDuration] = useState(2);
-  const [volume, setVolume] = useState(0.5);
-  const [modulation, setModulation] = useState(false);
-  const [modFreq, setModFreq] = useState(5);
-  const [modDepth, setModDepth] = useState(50);
+  const [waveType, setWaveType] = usePersistentState<WaveType>('waveType', 'sine');
+  const [frequency, setFrequency] = usePersistentState('frequency', 440);
+  const [duration, setDuration] = usePersistentState('duration', 2);
+  const [volume, setVolume] = usePersistentState('volume', 0.5);
+  const [modulation, setModulation] = usePersistentState('modulation', false);
+  const [modFreq, setModFreq] = usePersistentState('modFreq', 5);
+  const [modDepth, setModDepth] = usePersistentState('modDepth', 50);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
 

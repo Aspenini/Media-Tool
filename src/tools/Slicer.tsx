@@ -5,13 +5,17 @@ import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
+import { useIncomingFiles } from '../components/FileBridge';
+import { SendToButton } from '../components/SendToButton';
 import { useFileDrag } from '../components/FileDropZone';
 import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Artboard, Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { ChoiceCard, SwitchRow } from '../components/controls';
 import { drawDiagonalSlice, extractNumber, loadImageFromFile, type DiagonalDirection } from '../lib/image';
+import { fileFromUrl } from '../lib/download';
 import { MONO_FONT } from '../theme';
 
 interface SliceOutput {
@@ -28,8 +32,8 @@ export function Slicer() {
   const notify = useNotification();
   const [slotA, setSlotA] = useState<Slot | null>(null);
   const [slotB, setSlotB] = useState<Slot | null>(null);
-  const [direction, setDirection] = useState<DiagonalDirection>('tl2br');
-  const [allDirections, setAllDirections] = useState(false);
+  const [direction, setDirection] = usePersistentState<DiagonalDirection>('direction', 'tl2br');
+  const [allDirections, setAllDirections] = usePersistentState('allDirections', false);
   const [outputs, setOutputs] = useState<SliceOutput[]>([]);
 
   const setSlot = (which: 'a' | 'b') => (files: File[]) => {
@@ -57,6 +61,9 @@ export function Slicer() {
     setSlotB(slotA);
     setOutputs([]);
   };
+
+  // A handed-over image fills whichever slot is still empty.
+  useIncomingFiles((files) => (slotA && !slotB ? setSlot('b')(files) : fillBoth(files)));
 
   const handleGenerate = async () => {
     if (!slotA || !slotB) {
@@ -141,7 +148,10 @@ export function Slicer() {
                     <Artboard>
                       <img src={out.url} alt={out.name} />
                     </Artboard>
-                    <DownloadButton variant="outlined" size="small" href={out.url} download={out.name} label={out.name} sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem' }} />
+                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                      <DownloadButton variant="outlined" size="small" href={out.url} download={out.name} label={out.name} sx={{ flex: 1, minWidth: 0, fontFamily: MONO_FONT, fontSize: '0.75rem' }} />
+                      <SendToButton kind="image" compact getFile={() => fileFromUrl(out.url, out.name)} />
+                    </Box>
                   </Box>
                 ))}
               </Box>
@@ -173,6 +183,7 @@ function ImageSlot({ label, slot, onFiles }: { label: string; slot: Slot | null;
         transition: 'border-color 150ms',
         '&:hover': { borderColor: 'primary.main' },
         '&:hover .slot-hint': { opacity: 1 },
+        '&:focus-within': { borderColor: 'primary.main', outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
       })}
     >
       {slot ? (
@@ -217,7 +228,9 @@ function ImageSlot({ label, slot, onFiles }: { label: string; slot: Slot | null;
         type="file"
         accept="image/*"
         multiple={label === 'A'}
-        hidden
+        aria-label={`Image ${label}${slot ? `: ${slot.file.name}` : ''}`}
+        // Off-screen rather than hidden, so it can still be focused and used by keyboard.
+        style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           if (files.length) onFiles(files);

@@ -9,9 +9,11 @@ import PauseRoundedIcon from '@mui/icons-material/PauseRounded';
 import StopRoundedIcon from '@mui/icons-material/StopRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import HeadphonesRoundedIcon from '@mui/icons-material/HeadphonesRounded';
+import { useIncomingFiles } from '../components/FileBridge';
 import { FileDropZone } from '../components/FileDropZone';
 import { ListenerHead } from '../components/ListenerHead';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Panel, PanelSection, Stage, StageDock, StageTag, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { FieldLabel, Segmented, SliderField, SwitchRow } from '../components/controls';
@@ -26,15 +28,15 @@ export function AudioSpinning() {
   const notify = useNotification();
   const engineRef = useRef<OrbitalEngine | null>(null);
 
-  const [speed, setSpeed] = useState(0.6);
-  const [radius, setRadius] = useState(1.8);
-  const [height, setHeight] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [echo, setEcho] = useState(0.12);
-  const [echoDelay, setEchoDelay] = useState(200);
-  const [echoLink, setEchoLink] = useState(false);
-  const [doppler, setDoppler] = useState(1);
-  const [distanceModel, setDistanceModel] = useState<DistanceModel>('inverse');
+  const [speed, setSpeed] = usePersistentState('speed', 0.6);
+  const [radius, setRadius] = usePersistentState('radius', 1.8);
+  const [height, setHeight] = usePersistentState('height', 0);
+  const [volume, setVolume] = usePersistentState('volume', 1);
+  const [echo, setEcho] = usePersistentState('echo', 0.12);
+  const [echoDelay, setEchoDelay] = usePersistentState('echoDelay', 200);
+  const [echoLink, setEchoLink] = usePersistentState('echoLink', false);
+  const [doppler, setDoppler] = usePersistentState('doppler', 1);
+  const [distanceModel, setDistanceModel] = usePersistentState<DistanceModel>('distanceModel', 'inverse');
 
   const [fileName, setFileName] = useState<string | null>(null);
   const [status, setStatus] = useState('Load a file to begin.');
@@ -94,6 +96,8 @@ export function AudioSpinning() {
       notify('Could not decode that audio file.', 'error');
     }
   };
+
+  useIncomingFiles(handleFiles);
 
   const download = async () => {
     if (!engineRef.current?.hasBuffer()) {

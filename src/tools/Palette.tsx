@@ -3,12 +3,16 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import PaletteRoundedIcon from '@mui/icons-material/PaletteRounded';
+import { useIncomingFiles } from '../components/FileBridge';
+import { SendToButton } from '../components/SendToButton';
 import { FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Panel, PanelSection, Stage, StageDock, StageTag, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { ChoiceCard, FieldLabel, Segmented } from '../components/controls';
 import { loadImageFromFile, stripExtension } from '../lib/image';
+import { fileFromUrl } from '../lib/download';
 import { PALETTES, renderPalette, type ColorMatching, type DitheringMode } from '../lib/palette';
 
 const DITHER_OPTIONS: { value: DitheringMode; label: string; title: string }[] = [
@@ -37,38 +41,49 @@ export function Palette() {
 
   const [fileName, setFileName] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
-  const [paletteId, setPaletteId] = useState('gameboy');
-  const [dithering, setDithering] = useState<DitheringMode>('floyd-steinberg');
-  const [matching, setMatching] = useState<ColorMatching>('perceptual');
+  const [paletteId, setPaletteId] = usePersistentState('paletteId', 'gameboy');
+  const [dithering, setDithering] = usePersistentState<DitheringMode>('dithering', 'floyd-steinberg');
+  const [matching, setMatching] = usePersistentState<ColorMatching>('matching', 'perceptual');
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   const [split, setSplit] = useState(50);
+  const [working, setWorking] = useState(false);
 
   const loaded = version > 0;
 
   useEffect(() => {
     if (!loaded || !imgRef.current) return;
     const img = imgRef.current;
-    const result = renderPalette(img, paletteId, dithering, matching);
+    let cancelled = false;
+    setWorking(true);
+    void (async () => {
+      const result = await renderPalette(img, paletteId, dithering, matching);
+      setWorking(false);
+      // A newer render started while this one was running.
+      if (cancelled) return;
 
-    const original = originalRef.current;
-    if (original) {
-      original.width = result.width;
-      original.height = result.height;
-      original.getContext('2d')?.drawImage(img, 0, 0, result.width, result.height);
-    }
-    const out = paletteRef.current;
-    if (out) {
-      out.width = result.width;
-      out.height = result.height;
-      out.getContext('2d')?.putImageData(result.imageData, 0, 0);
-      out.toBlob((blob) => {
-        if (!blob) return;
-        setDownload((prev) => {
-          if (prev) URL.revokeObjectURL(prev.url);
-          return { url: URL.createObjectURL(blob), name: `${stripExtension(fileName ?? 'palette_image')}_${paletteId}.png` };
-        });
-      }, 'image/png');
-    }
+      const original = originalRef.current;
+      if (original) {
+        original.width = result.width;
+        original.height = result.height;
+        original.getContext('2d')?.drawImage(img, 0, 0, result.width, result.height);
+      }
+      const out = paletteRef.current;
+      if (out) {
+        out.width = result.width;
+        out.height = result.height;
+        out.getContext('2d')?.putImageData(result.imageData, 0, 0);
+        out.toBlob((blob) => {
+          if (!blob) return;
+          setDownload((prev) => {
+            if (prev) URL.revokeObjectURL(prev.url);
+            return { url: URL.createObjectURL(blob), name: `${stripExtension(fileName ?? 'palette_image')}_${paletteId}.png` };
+          });
+        }, 'image/png');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loaded, version, paletteId, dithering, matching, fileName]);
 
   const handleFiles = async (files: File[]) => {
@@ -86,13 +101,24 @@ export function Palette() {
     }
   };
 
+  useIncomingFiles(handleFiles);
+
   const current = PALETTES.find((p) => p.id === paletteId) ?? PALETTES[0];
 
   return (
     <Workbench panelWidth={350}>
       <Panel
         footer={
-          <ExportFooter primary={{ href: download?.url ?? '', download: download?.name, disabled: !download, label: 'Download converted PNG' }} />
+          <ExportFooter
+            primary={{
+              href: download?.url ?? '',
+              download: download?.name,
+              disabled: !download,
+              busy: working,
+              busyLabel: 'Working…',
+              label: 'Download converted PNG',
+            }}
+          />
         }
       >
         <ToolIntro />
@@ -151,6 +177,7 @@ export function Palette() {
                   <Swatches colors={current.colors} />
                 </Box>
               </Box>
+              <SendToButton kind="image" compact disabled={!download} getFile={() => (download ? fileFromUrl(download.url, download.name) : null)} />
             </StageDock>
           )
         }

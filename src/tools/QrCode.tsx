@@ -8,9 +8,12 @@ import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
+import { SendToButton } from '../components/SendToButton';
 import { Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { ColorField, FieldLabel, Segmented, SliderField } from '../components/controls';
+import { fileFromUrl } from '../lib/download';
 import { MONO_FONT } from '../theme';
 
 type Ecl = 'L' | 'M' | 'Q' | 'H';
@@ -26,12 +29,12 @@ export function QrCodeTool() {
   const notify = useNotification();
   const previewRef = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState('https://media-tool.aspenini.com');
-  const [ecl, setEcl] = useState<Ecl>('M');
-  const [size, setSize] = useState(512);
-  const [margin, setMargin] = useState(2);
-  const [format, setFormat] = useState<'png' | 'svg'>('png');
-  const [dark, setDark] = useState('#111111');
-  const [light, setLight] = useState('#ffffff');
+  const [ecl, setEcl] = usePersistentState<Ecl>('ecl', 'M');
+  const [size, setSize] = usePersistentState('size', 512);
+  const [margin, setMargin] = usePersistentState('margin', 2);
+  const [format, setFormat] = usePersistentState<'png' | 'svg'>('format', 'png');
+  const [dark, setDark] = usePersistentState('dark', '#111111');
+  const [light, setLight] = usePersistentState('light', '#ffffff');
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -190,10 +193,17 @@ export function QrCodeTool() {
             />
           </Box>
           {hasCode ? (
-            <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem', color: 'text.secondary', textAlign: 'center' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+              <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem', color: 'text.secondary', textAlign: 'center' }}>
               {size}×{size} · ECC {ecl} · {format.toUpperCase()}
-              {format === 'png' && ' · double-click to copy'}
-            </Typography>
+                {format === 'png' && ' · double-click to copy'}
+              </Typography>
+              <SendToButton
+                kind={format === 'svg' ? 'svg' : 'image'}
+                disabled={!download}
+                getFile={() => (download ? fileFromUrl(download.url, download.name) : null)}
+              />
+            </Box>
           ) : (
             <Box sx={{ textAlign: 'center', color: 'text.secondary', maxWidth: 320 }}>
               <QrCode2RoundedIcon sx={{ fontSize: 64, opacity: 0.4 }} />

@@ -1,3 +1,6 @@
+import { runOffThread } from './offThread';
+import { paletteKernel, type Rgb } from './paletteKernel';
+
 export type ColorMatching = 'euclidean' | 'perceptual' | 'manhattan';
 export type DitheringMode = 'none' | 'floyd-steinberg' | 'ordered' | 'atkinson';
 
@@ -7,14 +10,54 @@ export interface PaletteDef {
   colors: string[];
 }
 
-function randomColors(count: number): string[] {
-  return Array.from({ length: count }, () => {
-    const r = Math.floor(Math.random() * 256);
-    const g = Math.floor(Math.random() * 256);
-    const b = Math.floor(Math.random() * 256);
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-  });
+const hex = (r: number, g: number, b: number) =>
+  `#${[r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+
+/** 3-3-2 RGB: the classic "8-bit color" — 8 levels of red and green, 4 of blue. */
+const RGB_332: string[] = Array.from({ length: 256 }, (_, i) => hex(((i >> 5) & 7) * (255 / 7), ((i >> 2) & 7) * (255 / 7), (i & 3) * (255 / 3)));
+
+/** VGA DAC values are 6-bit (0–63); scale to 8-bit. */
+const dac = (v: number) => Math.round((v * 255) / 63);
+
+/**
+ * The IBM VGA BIOS default 256-color palette (mode 13h): the 16 EGA colors, a
+ * 16-step gray ramp, then 9 groups of 24 hues (3 intensities × 3 saturations),
+ * and 8 blacks.
+ */
+function vgaDefaultPalette(): string[] {
+  const colors: string[] = [...BASE_16];
+  const grays = [0, 5, 8, 11, 14, 17, 20, 24, 28, 32, 36, 40, 45, 50, 56, 63];
+  for (const g of grays) colors.push(hex(dac(g), dac(g), dac(g)));
+  // Five component levels per intensity/saturation group, from min to max.
+  const groups = [
+    [0, 16, 31, 47, 63], [31, 39, 47, 55, 63], [45, 49, 54, 58, 63],
+    [0, 7, 14, 21, 28], [14, 17, 21, 24, 28], [20, 22, 24, 26, 28],
+    [0, 4, 8, 12, 16], [8, 10, 12, 14, 16], [11, 12, 13, 15, 16],
+  ];
+  // Hue wheel as (r, g, b) indexes into the level list: blue → red → green → blue.
+  const wheel = [
+    [0, 0, 4], [1, 0, 4], [2, 0, 4], [3, 0, 4], [4, 0, 4], [4, 0, 3], [4, 0, 2], [4, 0, 1],
+    [4, 0, 0], [4, 1, 0], [4, 2, 0], [4, 3, 0], [4, 4, 0], [3, 4, 0], [2, 4, 0], [1, 4, 0],
+    [0, 4, 0], [0, 4, 1], [0, 4, 2], [0, 4, 3], [0, 4, 4], [0, 3, 4], [0, 2, 4], [0, 1, 4],
+  ];
+  for (const levels of groups) {
+    for (const [r, g, b] of wheel) colors.push(hex(dac(levels[r]), dac(levels[g]), dac(levels[b])));
+  }
+  while (colors.length < 256) colors.push('#000000');
+  return colors;
 }
+
+/** The widely used NES (2C02) palette, with its duplicate blacks removed. */
+const NES = [
+  '#7C7C7C', '#0000FC', '#0000BC', '#4428BC', '#940084', '#A80020', '#A81000', '#881400',
+  '#503000', '#007800', '#006800', '#005800', '#004058', '#000000',
+  '#BCBCBC', '#0078F8', '#0058F8', '#6844FC', '#D800CC', '#E40058', '#F83800', '#E45C10',
+  '#AC7C00', '#00B800', '#00A800', '#00A844', '#008888',
+  '#F8F8F8', '#3CBCFC', '#6888FC', '#9878F8', '#F878F8', '#F85898', '#F87858', '#FCA044',
+  '#F8B800', '#B8F818', '#58D854', '#58F898', '#00E8D8', '#787878',
+  '#FCFCFC', '#A4E4FC', '#B8B8F8', '#D8B8F8', '#F8B8F8', '#F8A4C0', '#F0D0B0', '#FCE0A8',
+  '#F8D878', '#D8F878', '#B8F8B8', '#B8F8D8', '#00FCFC', '#F8D8F8',
+];
 
 const BASE_16 = [
   '#000000', '#0000AA', '#00AA00', '#00AAAA', '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA',
@@ -27,17 +70,17 @@ const PICO8 = [
 ];
 
 export const PALETTES: PaletteDef[] = [
-  { id: '8bit', label: '8-bit (256 colors) - Classic PC gaming', colors: [...BASE_16, ...randomColors(240)] },
+  { id: '8bit', label: '8-bit (256 colors) - 3-3-2 RGB', colors: RGB_332 },
   { id: '16bit', label: '16-bit (16 colors) - PICO-8 style', colors: PICO8 },
   {
     id: 'nes',
-    label: 'NES (54 colors) - Nintendo Entertainment System',
-    colors: ['#000000', '#FFFFFF', '#7C7C7C', '#BCBCBC', '#880000', '#A80000', '#F83800', '#F83800', ...Array(46).fill('#F83800')],
+    label: `NES (${NES.length} colors) - Nintendo Entertainment System`,
+    colors: NES,
   },
   { id: 'gameboy', label: 'Game Boy (4 colors) - Classic monochrome', colors: ['#0F380F', '#306230', '#8BAC0F', '#9BBC0F'] },
-  { id: 'cga', label: 'CGA (4 colors) - Early PC graphics', colors: ['#000000', '#00AA00', '#AA0000', '#AAAA00'] },
+  { id: 'cga', label: 'CGA (4 colors) - Palette 0, low intensity', colors: ['#000000', '#00AA00', '#AA0000', '#AA5500'] },
   { id: 'ega', label: 'EGA (16 colors) - Enhanced Graphics Adapter', colors: BASE_16 },
-  { id: 'vga', label: 'VGA (256 colors) - Video Graphics Array', colors: [...BASE_16, ...randomColors(240)] },
+  { id: 'vga', label: 'VGA (256 colors) - IBM BIOS default palette', colors: vgaDefaultPalette() },
   {
     id: 'dawnbringer16',
     label: 'DawnBringer 16 - Popular pixel art palette',
@@ -46,7 +89,7 @@ export const PALETTES: PaletteDef[] = [
   { id: 'pico8', label: 'PICO-8 (16 colors) - Fantasy console palette', colors: PICO8 },
   {
     id: 'aap64',
-    label: 'AAP-64 - 64-color palette',
+    label: 'RGB 64 - Gray ramp + 4-level RGB',
     colors: [
       '#000000', '#1A1A1A', '#2A2A2A', '#3A3A3A', '#4A4A4A', '#5A5A5A', '#6A6A6A', '#7A7A7A',
       '#8A8A8A', '#9A9A9A', '#AAAAAA', '#BABABA', '#CACACA', '#DADADA', '#EAEAEA', '#FFFFFF',
@@ -69,12 +112,6 @@ export function getPalette(id: string): PaletteDef {
   return PALETTES.find((p) => p.id === id) ?? PALETTES[0];
 }
 
-interface Rgb {
-  r: number;
-  g: number;
-  b: number;
-}
-
 function hexToRgb(hex: string): Rgb {
   const h = hex.replace('#', '');
   return {
@@ -84,131 +121,19 @@ function hexToRgb(hex: string): Rgb {
   };
 }
 
-function findClosestColor(r: number, g: number, b: number, palette: Rgb[], method: ColorMatching): Rgb {
-  let closest = palette[0];
-  let min = Infinity;
-  for (const c of palette) {
-    let distance: number;
-    switch (method) {
-      case 'manhattan':
-        distance = Math.abs(r - c.r) + Math.abs(g - c.g) + Math.abs(b - c.b);
-        break;
-      case 'perceptual': {
-        const dr = r - c.r;
-        const dg = g - c.g;
-        const db = b - c.b;
-        distance = Math.sqrt(dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114);
-        break;
-      }
-      default:
-        distance = Math.sqrt((r - c.r) ** 2 + (g - c.g) ** 2 + (b - c.b) ** 2);
-    }
-    if (distance < min) {
-      min = distance;
-      closest = c;
-    }
-  }
-  return closest;
-}
-
-function clamp(v: number): number {
-  return Math.max(0, Math.min(255, v));
-}
-
-function applyFloydSteinberg(data: Uint8ClampedArray, width: number, height: number, palette: Rgb[]): void {
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const oldR = data[idx];
-      const oldG = data[idx + 1];
-      const oldB = data[idx + 2];
-      const nc = findClosestColor(oldR, oldG, oldB, palette, 'euclidean');
-      data[idx] = nc.r;
-      data[idx + 1] = nc.g;
-      data[idx + 2] = nc.b;
-      const errR = oldR - nc.r;
-      const errG = oldG - nc.g;
-      const errB = oldB - nc.b;
-      const spread = (nx: number, ny: number, f: number) => {
-        if (nx < 0 || nx >= width || ny < 0 || ny >= height) return;
-        const o = (ny * width + nx) * 4;
-        data[o] = clamp(data[o] + errR * f);
-        data[o + 1] = clamp(data[o + 1] + errG * f);
-        data[o + 2] = clamp(data[o + 2] + errB * f);
-      };
-      spread(x + 1, y, 7 / 16);
-      spread(x - 1, y + 1, 3 / 16);
-      spread(x, y + 1, 5 / 16);
-      spread(x + 1, y + 1, 1 / 16);
-    }
-  }
-}
-
-const BAYER_4 = [
-  [0, 8, 2, 10],
-  [12, 4, 14, 6],
-  [3, 11, 1, 9],
-  [15, 7, 13, 5],
-];
-
-function applyOrdered(data: Uint8ClampedArray, width: number, height: number, palette: Rgb[]): void {
-  const amount = 32;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const t = (BAYER_4[y % 4][x % 4] / 16 - 0.5) * amount;
-      const nc = findClosestColor(clamp(data[idx] + t), clamp(data[idx + 1] + t), clamp(data[idx + 2] + t), palette, 'euclidean');
-      data[idx] = nc.r;
-      data[idx + 1] = nc.g;
-      data[idx + 2] = nc.b;
-    }
-  }
-}
-
-function applyAtkinson(data: Uint8ClampedArray, width: number, height: number, palette: Rgb[]): void {
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const oldR = data[idx];
-      const oldG = data[idx + 1];
-      const oldB = data[idx + 2];
-      const nc = findClosestColor(oldR, oldG, oldB, palette, 'euclidean');
-      data[idx] = nc.r;
-      data[idx + 1] = nc.g;
-      data[idx + 2] = nc.b;
-      const errR = (oldR - nc.r) / 8;
-      const errG = (oldG - nc.g) / 8;
-      const errB = (oldB - nc.b) / 8;
-      const spread = (nx: number, ny: number) => {
-        if (nx < 0 || nx >= width || ny < 0 || ny >= height) return;
-        const o = (ny * width + nx) * 4;
-        data[o] = clamp(data[o] + errR);
-        data[o + 1] = clamp(data[o + 1] + errG);
-        data[o + 2] = clamp(data[o + 2] + errB);
-      };
-      spread(x + 1, y);
-      spread(x + 2, y);
-      spread(x - 1, y + 1);
-      spread(x, y + 1);
-      spread(x + 1, y + 1);
-      spread(x, y + 2);
-    }
-  }
-}
-
 export interface PaletteRenderResult {
   width: number;
   height: number;
   imageData: ImageData;
 }
 
-/** Render an image through a palette + dithering, returning ImageData (max 400px). */
-export function renderPalette(
+/** Render an image through a palette + dithering, returning ImageData (max 400px). The mapping runs in a worker. */
+export async function renderPalette(
   img: HTMLImageElement,
   paletteId: string,
   dithering: DitheringMode,
   matching: ColorMatching,
-): PaletteRenderResult {
+): Promise<PaletteRenderResult> {
   const palette = getPalette(paletteId).colors.map(hexToRgb);
   const maxSize = 400;
   const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
@@ -223,20 +148,8 @@ export function renderPalette(
   const source = ctx.getImageData(0, 0, width, height);
   const data = source.data;
 
-  if (dithering === 'floyd-steinberg') {
-    applyFloydSteinberg(data, width, height, palette);
-  } else if (dithering === 'ordered') {
-    applyOrdered(data, width, height, palette);
-  } else if (dithering === 'atkinson') {
-    applyAtkinson(data, width, height, palette);
-  } else {
-    for (let i = 0; i < data.length; i += 4) {
-      const nc = findClosestColor(data[i], data[i + 1], data[i + 2], palette, matching);
-      data[i] = nc.r;
-      data[i + 1] = nc.g;
-      data[i + 2] = nc.b;
-    }
-  }
+  const mapped = await runOffThread(paletteKernel, { data, width, height, palette, dithering, matching });
+  if (mapped !== data) source.data.set(mapped);
 
   return { width, height, imageData: source };
 }

@@ -42,6 +42,8 @@ export interface ToolDef {
   forceMode?: ThemeMode;
   /** Swap the body font for this tool's whole workspace. */
   bodyFont?: string;
+  /** File kinds this tool can be handed from another tool, or by pasting. */
+  accepts?: readonly ('image' | 'video' | 'audio' | 'svg' | 'csv')[];
   Component: LazyExoticComponent<ComponentType>;
 }
 
@@ -60,6 +62,7 @@ export const TOOLS: ToolDef[] = [
     category: 'image',
     icon: AspectRatioRoundedIcon,
     accent: '#f5a524',
+    accepts: ['image'],
     Component: load(() => import('./tools/Scaler'), 'Scaler'),
   },
   {
@@ -71,6 +74,7 @@ export const TOOLS: ToolDef[] = [
     category: 'image',
     icon: PhotoSizeSelectLargeRoundedIcon,
     accent: '#16b8a6',
+    accepts: ['image'],
     Component: load(() => import('./tools/ImageResize'), 'ImageResize'),
   },
   {
@@ -82,6 +86,7 @@ export const TOOLS: ToolDef[] = [
     category: 'image',
     icon: GridOnRoundedIcon,
     accent: '#8bd346',
+    accepts: ['image'],
     Component: load(() => import('./tools/PixelSnap'), 'PixelSnap'),
   },
   {
@@ -93,6 +98,7 @@ export const TOOLS: ToolDef[] = [
     category: 'image',
     icon: ContentCutRoundedIcon,
     accent: '#f43f6b',
+    accepts: ['image'],
     Component: load(() => import('./tools/Slicer'), 'Slicer'),
   },
   {
@@ -104,6 +110,7 @@ export const TOOLS: ToolDef[] = [
     category: 'image',
     icon: PaletteRoundedIcon,
     accent: '#b06cff',
+    accepts: ['image'],
     Component: load(() => import('./tools/Palette'), 'Palette'),
   },
   {
@@ -115,6 +122,7 @@ export const TOOLS: ToolDef[] = [
     category: 'audio',
     icon: RadioRoundedIcon,
     accent: '#ff7a1a',
+    accepts: ['audio'],
     Component: load(() => import('./tools/AudioEffects'), 'AudioEffects'),
   },
   {
@@ -138,6 +146,7 @@ export const TOOLS: ToolDef[] = [
     category: 'audio',
     icon: ThreeSixtyRoundedIcon,
     accent: '#4cb8ff',
+    accepts: ['audio'],
     Component: load(() => import('./tools/AudioSpinning'), 'AudioSpinning'),
   },
   {
@@ -149,6 +158,7 @@ export const TOOLS: ToolDef[] = [
     category: 'audio',
     icon: SurroundSoundRoundedIcon,
     accent: '#f2c230',
+    accepts: ['audio'],
     Component: load(() => import('./tools/AudioHamburger'), 'AudioHamburger'),
   },
   {
@@ -160,6 +170,7 @@ export const TOOLS: ToolDef[] = [
     category: 'make',
     icon: SentimentVerySatisfiedRoundedIcon,
     accent: '#f5b82e',
+    accepts: ['image', 'video'],
     Component: load(() => import('./tools/memeMaker/MemeMaker'), 'MemeMaker'),
   },
   {
@@ -182,6 +193,7 @@ export const TOOLS: ToolDef[] = [
     category: 'make',
     icon: TableChartRoundedIcon,
     accent: '#22b35e',
+    accepts: ['csv'],
     Component: load(() => import('./tools/Csv'), 'Csv'),
   },
   {
@@ -205,6 +217,7 @@ export const TOOLS: ToolDef[] = [
     category: 'inspect',
     icon: PanoramaPhotosphereRoundedIcon,
     accent: '#19c3d6',
+    accepts: ['image'],
     forceMode: 'dark',
     Component: load(() => import('./tools/Viewer360'), 'Viewer360'),
   },
@@ -217,6 +230,7 @@ export const TOOLS: ToolDef[] = [
     category: 'inspect',
     icon: AccountTreeRoundedIcon,
     accent: '#7c6cff',
+    accepts: ['svg'],
     Component: load(() => import('./tools/SvgDissect'), 'SvgDissect'),
   },
   {

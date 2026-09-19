@@ -12,6 +12,7 @@ import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
+import { useIncomingFiles } from '../components/FileBridge';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../components/Workbench';
@@ -47,9 +48,24 @@ function LayerNode({ node, depth, selectedId, hoveredId, onSelect, onHover }: La
     <Box component="li" sx={{ listStyle: 'none' }}>
       <Box
         title={node.label}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={active}
+        aria-expanded={hasChildren ? expanded : undefined}
         onClick={() => onSelect(node.id)}
+        onFocus={() => onHover(node.id)}
+        onBlur={() => onHover(null)}
         onMouseEnter={() => onHover(node.id)}
         onMouseLeave={() => onHover(null)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect(node.id);
+          } else if (hasChildren && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+            event.preventDefault();
+            setExpanded(event.key === 'ArrowRight');
+          }
+        }}
         sx={(theme) => ({
           display: 'flex',
           alignItems: 'center',
@@ -61,6 +77,7 @@ function LayerNode({ node, depth, selectedId, hoveredId, onSelect, onHover }: La
           color: active ? 'primary.main' : 'text.primary',
           bgcolor: active ? alpha(theme.palette.primary.main, 0.14) : hovered ? 'action.hover' : 'transparent',
           '&:hover': { bgcolor: active ? undefined : 'action.hover' },
+          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
         })}
       >
         {hasChildren ? (
@@ -206,6 +223,8 @@ export function SvgDissect() {
     [notify, teardown],
   );
 
+  useIncomingFiles((files) => void handleFiles(files));
+
   const selectLayer = useCallback((id: string) => interactionRef.current?.select(id), []);
   const hoverLayer = useCallback((id: string | null) => interactionRef.current?.hover(id), []);
 
@@ -246,7 +265,7 @@ export function SvgDissect() {
                   </Typography>
                 </Box>
               </Box>
-              <Box component="ul" sx={{ m: 0, px: 1, pb: 2, flex: 1, overflowY: 'auto', minHeight: 200 }}>
+              <Box component="ul" role="tree" aria-label="SVG layers" sx={{ m: 0, px: 1, pb: 2, flex: 1, overflowY: 'auto', minHeight: 200 }}>
                 <LayerNode node={root} depth={0} selectedId={selectedId} hoveredId={hoveredId} onSelect={selectLayer} onHover={hoverLayer} />
               </Box>
               {selectedNode && selectedDetails && (

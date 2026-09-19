@@ -15,9 +15,12 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
+import { useIncomingFiles } from '../components/FileBridge';
+import { useFileQueue } from '../hooks/useFileQueue';
 import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { ListenerHead } from '../components/ListenerHead';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { SliderField, SwitchRow } from '../components/controls';
@@ -42,10 +45,6 @@ type Transport = 'stopped' | 'playing' | 'paused';
 
 const PCT_PER_UNIT = (36 * 0.92) / WORLD_R_FOR_SCALE;
 
-function newId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
 export function AudioHamburger() {
   const notify = useNotification();
   const engineRef = useRef<HamburgerEngine | null>(null);
@@ -53,11 +52,15 @@ export function AudioHamburger() {
   const tracksRef = useRef<HamburgerTrack[]>([]);
   const draggingId = useRef<string | null>(null);
 
-  const [tracks, setTracks] = useState<HamburgerTrack[]>([]);
-  const [volume, setVolume] = useState(0.85);
+  const queue = useFileQueue<HamburgerTrack>({
+    create: (file, id) => ({ id, file, name: file.name, ...defaultPanForIndex(0, 1) }),
+    dispose: (track) => engineRef.current?.forget(track.id),
+  });
+  const tracks = queue.items;
+  const [volume, setVolume] = usePersistentState('volume', 0.85);
   const [transport, setTransport] = useState<Transport>('stopped');
-  const [onePerSide, setOnePerSide] = useState(false);
-  const [swapped, setSwapped] = useState(false);
+  const [onePerSide, setOnePerSide] = usePersistentState('onePerSide', false);
+  const [swapped, setSwapped] = usePersistentState('swapped', false);
   const [status, setStatus] = useState('Add tracks, then drag each dot around your head.');
   const [exporting, setExporting] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -80,50 +83,37 @@ export function AudioHamburger() {
   const twoTrack = tracks.length === 2;
   const locked = onePerSide && twoTrack;
 
-  const commitPositions = (next: HamburgerTrack[]) => {
-    setTracks(next);
-    if (transport !== 'stopped') engineRef.current?.syncPositions(next);
+  /** Apply a change to every track and keep a running mix in sync with it. */
+  const commitPositions = (map: (track: HamburgerTrack) => HamburgerTrack) => {
+    queue.updateAll(map);
+    if (transport !== 'stopped') engineRef.current?.syncPositions(tracksRef.current.map(map));
   };
 
   const applyOnePerSide = (flip: boolean) => {
-    setTracks((prev) => {
-      if (prev.length !== 2) return prev;
-      const [a, b] = flip ? [AZIMUTH_RIGHT, AZIMUTH_LEFT] : [AZIMUTH_LEFT, AZIMUTH_RIGHT];
-      const next = [
-        { ...prev[0], azimuth: a, distance: ONE_PER_SIDE_DIST, height: 0 },
-        { ...prev[1], azimuth: b, distance: ONE_PER_SIDE_DIST, height: 0 },
-      ];
-      if (transport !== 'stopped') engineRef.current?.syncPositions(next);
-      return next;
-    });
+    if (tracks.length !== 2) return;
+    const [a, b] = flip ? [AZIMUTH_RIGHT, AZIMUTH_LEFT] : [AZIMUTH_LEFT, AZIMUTH_RIGHT];
+    const next = [
+      { ...tracks[0], azimuth: a, distance: ONE_PER_SIDE_DIST, height: 0 },
+      { ...tracks[1], azimuth: b, distance: ONE_PER_SIDE_DIST, height: 0 },
+    ];
+    queue.updateAll((track) => next.find((t) => t.id === track.id) ?? track);
+    if (transport !== 'stopped') engineRef.current?.syncPositions(next);
   };
 
   const handleFiles = (files: File[]) => {
     const baseLen = tracks.length;
-    const additions = files.map((file, i) => ({
-      id: newId(),
-      file,
-      name: file.name,
-      ...defaultPanForIndex(baseLen + i, baseLen + files.length),
-    }));
-    const next = [...tracks, ...additions];
-    setTracks(next);
-    setStatus(`${next.length} layer${next.length === 1 ? '' : 's'}. Drag dots to place them, then play.`);
+    const added = queue.add(files);
+    // Spread the new dots across the front, leaving placed ones alone.
+    added.forEach((track, i) => queue.update(track.id, defaultPanForIndex(baseLen + i, baseLen + added.length)));
+    const total = baseLen + added.length;
+    setStatus(`${total} layer${total === 1 ? '' : 's'}. Drag dots to place them, then play.`);
   };
+
+  useIncomingFiles(handleFiles);
 
   const removeTrack = (id: string) => {
-    engineRef.current?.forget(id);
-    const next = tracks.filter((t) => t.id !== id);
-    setTracks(next);
-    if (transport !== 'stopped') engineRef.current?.syncPositions(next);
-  };
-
-  const moveTrack = (index: number, dir: -1 | 1) => {
-    const target = index + dir;
-    if (target < 0 || target >= tracks.length) return;
-    const next = [...tracks];
-    [next[index], next[target]] = [next[target], next[index]];
-    setTracks(next);
+    queue.remove(id);
+    if (transport !== 'stopped') engineRef.current?.syncPositions(tracksRef.current.filter((t) => t.id !== id));
   };
 
   const play = async () => {
@@ -174,17 +164,12 @@ export function AudioHamburger() {
     const rect = stage.getBoundingClientRect();
     const scalePx = ((Math.min(rect.width, rect.height) * 0.36) / WORLD_R_FOR_SCALE) * 0.92;
     if (scalePx <= 0) return;
-    setTracks((prev) => {
-      const next = prev.map((t) => {
-        if (t.id !== id) return t;
-        const x = (clientX - rect.left - rect.width / 2) / scalePx;
-        const z = (clientY - rect.top - rect.height / 2) / scalePx + t.height * 0.22;
-        let dist = Math.hypot(x, z);
-        dist = Math.min(MAX_PAN_DIST, Math.max(MIN_PAN_DIST, dist));
-        return { ...t, azimuth: Math.atan2(x, -z), distance: dist };
-      });
-      if (transport !== 'stopped') engineRef.current?.syncPositions(next);
-      return next;
+    commitPositions((t) => {
+      if (t.id !== id) return t;
+      const x = (clientX - rect.left - rect.width / 2) / scalePx;
+      const z = (clientY - rect.top - rect.height / 2) / scalePx + t.height * 0.22;
+      const dist = Math.min(MAX_PAN_DIST, Math.max(MIN_PAN_DIST, Math.hypot(x, z)));
+      return { ...t, azimuth: Math.atan2(x, -z), distance: dist };
     });
   };
 
@@ -206,12 +191,20 @@ export function AudioHamburger() {
     pointerToPan(id, e.clientX, e.clientY);
   };
 
-  const nudgeHeight = (id: string, step: number) => {
-    const next = tracksRef.current.map((t) =>
-      t.id === id ? { ...t, height: Math.min(MAX_PAN_HEIGHT, Math.max(MIN_PAN_HEIGHT, t.height + step)) } : t,
+  const nudgeHeight = (id: string, step: number) =>
+    commitPositions((t) => (t.id === id ? { ...t, height: Math.min(MAX_PAN_HEIGHT, Math.max(MIN_PAN_HEIGHT, t.height + step)) } : t));
+
+  /** Keyboard equivalent of dragging: turn around the head and move closer or further. */
+  const nudgePosition = (id: string, dAzimuthDeg: number, dDistance: number) =>
+    commitPositions((t) =>
+      t.id === id
+        ? {
+            ...t,
+            azimuth: t.azimuth + (dAzimuthDeg * Math.PI) / 180,
+            distance: Math.min(MAX_PAN_DIST, Math.max(MIN_PAN_DIST, t.distance + dDistance)),
+          }
+        : t,
     );
-    commitPositions(next);
-  };
 
   const onDotWheel = (id: string) => (e: React.WheelEvent) => {
     if (locked) return;
@@ -291,10 +284,10 @@ export function AudioHamburger() {
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex' }}>
-                    <IconButton size="small" disabled={index === 0} onClick={() => moveTrack(index, -1)} aria-label="Move up">
+                    <IconButton size="small" disabled={index === 0} onClick={() => queue.move(track.id, -1)} aria-label="Move up">
                       <ArrowUpwardRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
-                    <IconButton size="small" disabled={index === tracks.length - 1} onClick={() => moveTrack(index, 1)} aria-label="Move down">
+                    <IconButton size="small" disabled={index === tracks.length - 1} onClick={() => queue.move(track.id, 1)} aria-label="Move down">
                       <ArrowDownwardRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                     <IconButton size="small" onClick={() => removeTrack(track.id)} aria-label={`Remove ${track.name}`}>
@@ -400,10 +393,23 @@ export function AudioHamburger() {
                     onMouseLeave={() => draggingId.current !== track.id && setFocusId(null)}
                     onKeyDown={(e) => {
                       if (locked) return;
-                      if (e.key === 'PageUp' || e.key === '+') nudgeHeight(track.id, 0.16);
-                      if (e.key === 'PageDown' || e.key === '-') nudgeHeight(track.id, -0.16);
+                      const big = e.shiftKey ? 3 : 1;
+                      const moves: Record<string, () => void> = {
+                        ArrowLeft: () => nudgePosition(track.id, -5 * big, 0),
+                        ArrowRight: () => nudgePosition(track.id, 5 * big, 0),
+                        ArrowUp: () => nudgePosition(track.id, 0, -0.15 * big),
+                        ArrowDown: () => nudgePosition(track.id, 0, 0.15 * big),
+                        PageUp: () => nudgeHeight(track.id, 0.16 * big),
+                        PageDown: () => nudgeHeight(track.id, -0.16 * big),
+                        '+': () => nudgeHeight(track.id, 0.16),
+                        '-': () => nudgeHeight(track.id, -0.16),
+                      };
+                      const move = moves[e.key];
+                      if (!move) return;
+                      e.preventDefault();
+                      move();
                     }}
-                    title={`${track.name} — drag for direction & distance; scroll for height`}
+                    title={`${track.name} — drag or use arrow keys for direction & distance; scroll or PageUp/PageDown for height`}
                     sx={{
                       position: 'absolute',
                       left: `${left}%`,
@@ -453,7 +459,7 @@ export function AudioHamburger() {
               })}
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 2 }}>
-              Drag a dot for direction and distance · scroll on it (or PageUp/PageDown) for height
+              Drag a dot, or focus one and use the arrow keys, for direction and distance · scroll or PageUp/PageDown for height
             </Typography>
           </Box>
         )}

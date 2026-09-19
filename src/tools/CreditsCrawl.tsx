@@ -13,6 +13,7 @@ import MovieRoundedIcon from '@mui/icons-material/MovieRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { ChoiceCard } from '../components/controls';
 import { Panel, PanelSection, Stage, StageTag, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
@@ -57,7 +58,7 @@ function allFontsHref(): string {
 export function CreditsCrawl() {
   const notify = useNotification();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [font, setFont] = useState('Playfair Display');
+  const [font, setFont] = usePersistentState('font', 'Playfair Display');
   const [categories, setCategories] = useState<Category[]>(STARTER);
   const [open, setOpen] = useState(false);
   const [recording, setRecording] = useState(false);

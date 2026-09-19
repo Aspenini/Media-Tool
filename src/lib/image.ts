@@ -79,3 +79,19 @@ export function extractNumber(name: string): string {
   const match = name.match(/\d+/);
   return match ? match[0] : '00';
 }
+
+/** Longest side most browsers will allocate for a canvas. */
+export const MAX_CANVAS_SIDE = 16384;
+/** Total pixels we allow: plenty for real work, and small enough not to exhaust memory. */
+export const MAX_CANVAS_PIXELS = 40_000_000;
+
+/** Why a canvas of this size can't be made, or null if it's fine. */
+export function canvasSizeProblem(width: number, height: number): string | null {
+  if (width > MAX_CANVAS_SIDE || height > MAX_CANVAS_SIDE) {
+    return `${width}×${height} is wider or taller than browsers can draw (max ${MAX_CANVAS_SIDE}px per side).`;
+  }
+  if (width * height > MAX_CANVAS_PIXELS) {
+    return `${width}×${height} is ${Math.round((width * height) / 1e6)} megapixels — too big to render safely (max ${MAX_CANVAS_PIXELS / 1e6} MP).`;
+  }
+  return null;
+}

@@ -4,13 +4,17 @@ import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import GridOnRoundedIcon from '@mui/icons-material/GridOnRounded';
+import { useIncomingFiles } from '../components/FileBridge';
+import { SendToButton } from '../components/SendToButton';
 import { FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Artboard, Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
 import { ExportFooter } from '../components/ExportFooter';
 import { FieldLabel, Segmented, Stat, SwitchRow } from '../components/controls';
 import { loadImageFromFile, stripExtension } from '../lib/image';
-import { processPixelSnap, type PotMode, type SnapSettings } from '../lib/pixelSnap';
+import { fileFromUrl } from '../lib/download';
+import { processPixelSnap, type PotMode, type SnapResult, type SnapSettings } from '../lib/pixelSnap';
 import { MONO_FONT } from '../theme';
 
 const PIXEL_SIZES = ['auto', '2', '4', '8', '16', '32', '64'] as const;
@@ -42,21 +46,24 @@ export function PixelSnap() {
   const [fileName, setFileName] = useState<string | null>(null);
   /** Bumped on every load so the same file dropped twice still re-runs. */
   const [version, setVersion] = useState(0);
+  const [working, setWorking] = useState(false);
   const [info, setInfo] = useState<SnapInfo | null>(null);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
 
-  const [pixelSize, setPixelSize] = useState<string>('auto');
-  const [colors, setColors] = useState(16);
-  const [potMode, setPotMode] = useState<PotMode>('balanced');
-  const [targetSize, setTargetSize] = useState('auto');
-  const [preserveAlpha, setPreserveAlpha] = useState(true);
-  const [dither, setDither] = useState(false);
-  const [square, setSquare] = useState(false);
+  const [pixelSize, setPixelSize] = usePersistentState<string>('pixelSize', 'auto');
+  const [colors, setColors] = usePersistentState('colors', 16);
+  const [potMode, setPotMode] = usePersistentState<PotMode>('potMode', 'balanced');
+  const [targetSize, setTargetSize] = usePersistentState('targetSize', 'auto');
+  const [preserveAlpha, setPreserveAlpha] = usePersistentState('preserveAlpha', true);
+  const [dither, setDither] = usePersistentState('dither', false);
+  const [square, setSquare] = usePersistentState('square', false);
 
   const loaded = fileName !== null;
 
-  const run = useCallback(() => {
-    if (!imgRef.current) return;
+  const run = useCallback(async () => {
+    const img = imgRef.current;
+    if (!img) return;
+    setWorking(true);
     const settings: SnapSettings = {
       pixelSize: pixelSize === 'auto' ? 'auto' : parseInt(pixelSize, 10),
       colors,
@@ -66,7 +73,12 @@ export function PixelSnap() {
       dither,
       square,
     };
-    const result = processPixelSnap(imgRef.current, settings);
+    let result: SnapResult;
+    try {
+      result = await processPixelSnap(img, settings);
+    } finally {
+      setWorking(false);
+    }
 
     const before = beforeRef.current;
     if (before) {
@@ -103,7 +115,7 @@ export function PixelSnap() {
   }, [pixelSize, colors, potMode, targetSize, preserveAlpha, dither, square]);
 
   useEffect(() => {
-    if (version > 0) run();
+    if (version > 0) void run();
   }, [version, run]);
 
   const handleFiles = async (files: File[]) => {
@@ -122,6 +134,8 @@ export function PixelSnap() {
     }
   };
 
+  useIncomingFiles(handleFiles);
+
   return (
     <Workbench panelWidth={330}>
       <Panel
@@ -132,6 +146,8 @@ export function PixelSnap() {
               download: download?.name,
               disabled: !download,
               label: info ? `Download ${info.outWidth}×${info.outHeight} PNG` : 'Download',
+              busy: working,
+              busyLabel: 'Working…',
             }}
           />
         }
@@ -190,6 +206,7 @@ export function PixelSnap() {
               <Stat label="Colors" value={colors} />
               <Stat label="Output" value={`${info.outWidth}×${info.outHeight}${info.usedTarget ? ' ⌖' : ''}`} accent />
             </Box>
+            <SendToButton kind="image" disabled={!download} getFile={() => (download ? fileFromUrl(download.url, download.name) : null)} />
           </PanelSection>
         )}
       </Panel>

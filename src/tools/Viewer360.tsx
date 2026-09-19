@@ -5,8 +5,10 @@ import { alpha } from '@mui/material/styles';
 import PanoramaPhotosphereRoundedIcon from '@mui/icons-material/PanoramaPhotosphereRounded';
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import PanToolRoundedIcon from '@mui/icons-material/PanToolRounded';
+import { useIncomingFiles } from '../components/FileBridge';
 import { FileButton, FileDropZone, useFileDrag } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { StageDock, useTool } from '../components/Workbench';
 import { Segmented } from '../components/controls';
 import { loadImageObjectUrl, Viewer360Engine, type ProjectionMode } from '../lib/viewer360';
@@ -25,7 +27,7 @@ export function Viewer360() {
   const engineRef = useRef<Viewer360Engine | null>(null);
   const urlRef = useRef<string | null>(null);
   const fileRef = useRef<File | null>(null);
-  const [projection, setProjection] = useState<ProjectionMode>('equirectangular');
+  const [projection, setProjection] = usePersistentState<ProjectionMode>('projection', 'equirectangular');
   const [fileName, setFileName] = useState<string | null>(null);
   const [hint, setHint] = useState(false);
 
@@ -72,6 +74,8 @@ export function Viewer360() {
     setProjection(mode);
     if (fileRef.current) void apply(fileRef.current, mode, false);
   };
+
+  useIncomingFiles(handleFiles);
 
   const { active, handlers } = useFileDrag(fileName ? handleFiles : undefined);
   const Icon = tool.icon;
