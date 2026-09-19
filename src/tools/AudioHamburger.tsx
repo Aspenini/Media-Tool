@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Paper from '@mui/material/Paper';
-import Stack from '@mui/material/Stack';
-import Slider from '@mui/material/Slider';
-import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import Checkbox from '@mui/material/Checkbox';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
+import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import { useTheme } from '@mui/material/styles';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
@@ -17,9 +12,13 @@ import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded';
 import StopRoundedIcon from '@mui/icons-material/StopRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import { ToolShell } from '../components/ToolShell';
-import { FileDropZone } from '../components/FileDropZone';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
+import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
+import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../components/Workbench';
+import { SliderField, SwitchRow } from '../components/controls';
 import {
   AZIMUTH_LEFT,
   AZIMUTH_RIGHT,
@@ -35,6 +34,7 @@ import {
   type HamburgerTrack,
 } from '../lib/hamburger';
 import { worldFromPan } from '../lib/spatial';
+import { MONO_FONT } from '../theme';
 
 type Transport = 'stopped' | 'playing' | 'paused';
 
@@ -56,8 +56,9 @@ export function AudioHamburger() {
   const [transport, setTransport] = useState<Transport>('stopped');
   const [onePerSide, setOnePerSide] = useState(false);
   const [swapped, setSwapped] = useState(false);
-  const [status, setStatus] = useState('Add tracks, drag each dot around your head on the map, then press Play all.');
+  const [status, setStatus] = useState('Add tracks, then drag each dot around your head.');
   const [exporting, setExporting] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   tracksRef.current = tracks;
 
@@ -105,7 +106,7 @@ export function AudioHamburger() {
     }));
     const next = [...tracks, ...additions];
     setTracks(next);
-    setStatus(`${next.length} track(s). Drag dots on the map to place each sound, then Play all.`);
+    setStatus(`${next.length} layer${next.length === 1 ? '' : 's'}. Drag dots to place them, then play.`);
   };
 
   const removeTrack = (id: string) => {
@@ -146,16 +147,16 @@ export function AudioHamburger() {
   const stop = () => {
     engineRef.current?.stop(true);
     setTransport('stopped');
-    setStatus(tracks.length ? 'Stopped. Press Play all again from the same map layout.' : 'Add audio files to begin.');
+    setStatus(tracks.length ? 'Stopped. Play again from the same layout.' : 'Add audio files to begin.');
   };
 
   const download = async () => {
     if (!tracks.length || exporting) return;
     setExporting(true);
-    setStatus('Rendering binaural mix (offline). Large mixes take longer…');
+    setStatus('Rendering binaural mix offline — large stacks take longer…');
     try {
       await engineRef.current?.downloadMix(tracks, volume);
-      setStatus('Saved stereo binaural WAV (same positions as on the map). Use headphones.');
+      setStatus('Saved a stereo binaural WAV matching the map. Use headphones.');
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Could not render the mix.', 'error');
       setStatus('Export failed.');
@@ -189,6 +190,7 @@ export function AudioHamburger() {
     if (locked) return;
     e.preventDefault();
     draggingId.current = id;
+    setFocusId(id);
     const move = (ev: PointerEvent) => {
       if (draggingId.current) pointerToPan(draggingId.current, ev.clientX, ev.clientY);
     };
@@ -202,75 +204,119 @@ export function AudioHamburger() {
     pointerToPan(id, e.clientX, e.clientY);
   };
 
-  const onDotWheel = (id: string) => (e: React.WheelEvent) => {
-    if (locked) return;
-    const step = e.deltaY < 0 ? 0.16 : -0.16;
+  const nudgeHeight = (id: string, step: number) => {
     const next = tracksRef.current.map((t) =>
       t.id === id ? { ...t, height: Math.min(MAX_PAN_HEIGHT, Math.max(MIN_PAN_HEIGHT, t.height + step)) } : t,
     );
     commitPositions(next);
   };
 
-  return (
-    <ToolShell title="Audio Hamburger" description="Play several tracks at once in 3D space. Drag each dot on the map around your head to set direction and distance; scroll on a dot to change height. Headphones recommended — nothing leaves your machine.">
-      <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, alignItems: 'start' }}>
-        <Paper variant="outlined" sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, borderRadius: 3 }}>
-          <FileDropZone accept="audio/*" multiple title="Add audio files" hint="or click to browse — one or many" onFiles={handleFiles} />
+  const onDotWheel = (id: string) => (e: React.WheelEvent) => {
+    if (locked) return;
+    nudgeHeight(id, e.deltaY < 0 ? 0.16 : -0.16);
+  };
 
-          <Box>
-            <Typography variant="overline" color="text.secondary">
-              Stack — {tracks.length} tracks
+  return (
+    <Workbench panelWidth={340}>
+      <Panel
+        footer={
+          <>
+            <Button size="large" variant="outlined" onClick={download} disabled={!tracks.length || exporting} startIcon={<DownloadRoundedIcon />}>
+              {exporting ? 'Rendering…' : 'Download mix (WAV)'}
+            </Button>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+              {status}
             </Typography>
-            {tracks.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No files yet.
-              </Typography>
-            ) : (
-              <List dense disablePadding>
-                {tracks.map((track, index) => (
-                  <ListItem
-                    key={track.id}
-                    disableGutters
-                    sx={{ gap: 1, px: 1, py: 0.5, borderRadius: 1.5, '&:hover': { backgroundColor: 'action.hover' } }}
-                    secondaryAction={
-                      <IconButton edge="end" size="small" onClick={() => removeTrack(track.id)} aria-label="Remove">
-                        <CloseRoundedIcon fontSize="small" />
-                      </IconButton>
-                    }
+          </>
+        }
+      >
+        <ToolIntro />
+        <PanelSection
+          title={`Layers · ${tracks.length}`}
+          action={
+            <FileButton size="small" variant="outlined" multiple accept="audio/*" onFiles={handleFiles} startIcon={<AddRoundedIcon />}>
+              Add
+            </FileButton>
+          }
+        >
+          {tracks.length === 0 ? (
+            <FileDropZone multiple accept="audio/*" title="Add audio files" hint="One or many" onFiles={handleFiles} />
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {tracks.map((track, index) => (
+                <Box
+                  key={track.id}
+                  onMouseEnter={() => setFocusId(track.id)}
+                  onMouseLeave={() => setFocusId(null)}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '22px minmax(0, 1fr) auto',
+                    alignItems: 'center',
+                    gap: 1,
+                    pl: 1,
+                    pr: 0.25,
+                    py: 0.5,
+                    borderRadius: 2,
+                    bgcolor: focusId === track.id ? 'action.hover' : 'transparent',
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      bgcolor: dotHue(index, tracks.length),
+                      color: '#0b0b0c',
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                    }}
                   >
-                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', background: dotHue(index, tracks.length), flexShrink: 0 }} />
-                    <Typography variant="body2" noWrap sx={{ flexGrow: 1 }} title={track.name}>
+                    {index + 1}
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" noWrap title={track.name} sx={{ fontWeight: 550 }}>
                       {track.name}
                     </Typography>
+                    <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.68rem', color: 'text.secondary' }}>
+                      {((track.azimuth * 180) / Math.PI).toFixed(0)}° · {track.distance.toFixed(1)}m · h{track.height >= 0 ? '+' : ''}
+                      {track.height.toFixed(1)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex' }}>
                     <IconButton size="small" disabled={index === 0} onClick={() => moveTrack(index, -1)} aria-label="Move up">
-                      <ArrowUpwardRoundedIcon fontSize="small" />
+                      <ArrowUpwardRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                     <IconButton size="small" disabled={index === tracks.length - 1} onClick={() => moveTrack(index, 1)} aria-label="Move down">
-                      <ArrowDownwardRoundedIcon fontSize="small" />
+                      <ArrowDownwardRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
-                  </ListItem>
-                ))}
-              </List>
-            )}
-          </Box>
-
+                    <IconButton size="small" onClick={() => removeTrack(track.id)} aria-label={`Remove ${track.name}`}>
+                      <CloseRoundedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </PanelSection>
+        <PanelSection title="Mix">
+          <SliderField label="Master volume" value={volume} onChange={setVolume} min={0} max={2} step={0.01} format={(v) => `${Math.round(v * 100)}%`} />
           {twoTrack && (
-            <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={onePerSide}
-                    onChange={(e) => {
-                      setOnePerSide(e.target.checked);
-                      if (e.target.checked) applyOnePerSide(swapped);
-                    }}
-                  />
-                }
+            <>
+              <SwitchRow
                 label="One per side"
+                hint="Pin track 1 left and track 2 right"
+                checked={onePerSide}
+                onChange={(checked) => {
+                  setOnePerSide(checked);
+                  if (checked) applyOnePerSide(swapped);
+                }}
               />
               <Button
                 variant="outlined"
                 disabled={!onePerSide}
+                startIcon={<SwapHorizRoundedIcon />}
                 onClick={() => {
                   const flip = !swapped;
                   setSwapped(flip);
@@ -279,87 +325,181 @@ export function AudioHamburger() {
               >
                 Swap sides
               </Button>
-            </Stack>
+            </>
           )}
+        </PanelSection>
+      </Panel>
 
-          <Box>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Master volume — {Math.round(volume * 100)}%
+      <Stage
+        backdrop="plain"
+        onFiles={handleFiles}
+        dropLabel="Drop to add layers"
+        overlay={
+          tracks.length > 0 && (
+            <StageDock>
+              {transport === 'playing' ? (
+                <Button onClick={pause} disabled={exporting} startIcon={<PauseRoundedIcon />}>
+                  Pause
+                </Button>
+              ) : (
+                <Button onClick={play} disabled={exporting} startIcon={<PlayArrowRoundedIcon />}>
+                  {transport === 'paused' ? 'Resume' : 'Play all'}
+                </Button>
+              )}
+              <Tooltip title="Stop">
+                <span>
+                  <IconButton onClick={stop} disabled={transport === 'stopped' || exporting}>
+                    <StopRoundedIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem', color: 'text.secondary', px: 1 }}>
+                {tracks.length} layer{tracks.length === 1 ? '' : 's'} · {transport}
+              </Typography>
+            </StageDock>
+          )
+        }
+      >
+        {tracks.length === 0 ? (
+          <FileDropZone
+            variant="hero"
+            multiple
+            accept="audio/*"
+            icon={LayersRoundedIcon}
+            title="Stack up some tracks"
+            hint="Drop several audio files. Each becomes a dot you can place around your head."
+            onFiles={handleFiles}
+          />
+        ) : (
+          <Box sx={{ width: 'min(100%, 72vh, 680px)', mb: 8 }}>
+            <Box ref={stageRef} sx={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', touchAction: 'none', cursor: locked ? 'not-allowed' : 'default' }}>
+              <MapBackdrop />
+              {tracks.map((track, index) => {
+                const { x, y, z } = worldFromPan(track.azimuth, track.distance, track.height);
+                const left = 50 + x * PCT_PER_UNIT;
+                const top = 50 + z * PCT_PER_UNIT - y * PCT_PER_UNIT * 0.22;
+                const size = Math.max(22, 30 + track.height * 4);
+                const color = dotHue(index, tracks.length);
+                const focused = focusId === track.id;
+                return (
+                  <Box
+                    key={track.id}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label={`${track.name} position`}
+                    aria-valuetext={`${((track.azimuth * 180) / Math.PI).toFixed(0)} degrees, ${track.distance.toFixed(1)} metres, height ${track.height.toFixed(1)}`}
+                    onPointerDown={onDotPointerDown(track.id)}
+                    onWheel={onDotWheel(track.id)}
+                    onMouseEnter={() => setFocusId(track.id)}
+                    onMouseLeave={() => draggingId.current !== track.id && setFocusId(null)}
+                    onKeyDown={(e) => {
+                      if (locked) return;
+                      if (e.key === 'PageUp' || e.key === '+') nudgeHeight(track.id, 0.16);
+                      if (e.key === 'PageDown' || e.key === '-') nudgeHeight(track.id, -0.16);
+                    }}
+                    title={`${track.name} — drag for direction & distance; scroll for height`}
+                    sx={{
+                      position: 'absolute',
+                      left: `${left}%`,
+                      top: `${top}%`,
+                      width: size,
+                      height: size,
+                      borderRadius: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      bgcolor: color,
+                      color: '#0b0b0c',
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      zIndex: focused ? 50 : 10 + index,
+                      cursor: locked ? 'not-allowed' : 'grab',
+                      boxShadow: `0 0 0 3px rgba(255,255,255,${focused ? 0.9 : 0.5}), 0 0 24px ${color}`,
+                      transition: draggingId.current === track.id ? 'none' : 'left 0.12s, top 0.12s, width 0.12s, height 0.12s',
+                      '&:active': { cursor: locked ? 'not-allowed' : 'grabbing' },
+                      '&:focus-visible': { outline: '2px solid #fff', outlineOffset: 3 },
+                    }}
+                  >
+                    {index + 1}
+                    {focused && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: '100%',
+                          mt: 1,
+                          px: 1,
+                          py: 0.25,
+                          borderRadius: 1,
+                          bgcolor: 'rgba(0,0,0,0.75)',
+                          color: '#fff',
+                          fontFamily: MONO_FONT,
+                          fontSize: '0.68rem',
+                          fontWeight: 400,
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {track.name}
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 2 }}>
+              Drag a dot for direction and distance · scroll on it (or PageUp/PageDown) for height
             </Typography>
-            <Slider value={volume} onChange={(_, v) => setVolume(v as number)} min={0} max={2} step={0.01} />
           </Box>
+        )}
+      </Stage>
+    </Workbench>
+  );
+}
 
-          <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button onClick={play} disabled={!tracks.length || transport === 'playing' || exporting} startIcon={<PlayArrowRoundedIcon />}>
-              Play all
-            </Button>
-            <Button variant="outlined" onClick={pause} disabled={transport !== 'playing' || exporting} startIcon={<PauseRoundedIcon />}>
-              Pause
-            </Button>
-            <Button variant="outlined" color="inherit" onClick={stop} disabled={transport === 'stopped' || exporting} startIcon={<StopRoundedIcon />}>
-              Stop
-            </Button>
-            <Button variant="outlined" onClick={download} disabled={!tracks.length || exporting} startIcon={<DownloadRoundedIcon />}>
-              Download mix (WAV)
-            </Button>
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            {status}
-          </Typography>
-        </Paper>
-
-        <Paper variant="outlined" sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 3 }}>
-          <Box
-            ref={stageRef}
-            sx={{
-              position: 'relative',
-              width: '100%',
-              aspectRatio: '1 / 1',
-              borderRadius: 3,
-              overflow: 'hidden',
-              touchAction: 'none',
-              background: 'radial-gradient(circle at 50% 50%, rgba(34,211,238,0.16), transparent 70%)',
-              border: '1px solid',
-              borderColor: 'divider',
-              cursor: locked ? 'not-allowed' : 'crosshair',
-            }}
-          >
-            <Box sx={{ position: 'absolute', inset: 0, '&::before, &::after': { content: '""', position: 'absolute', background: 'rgba(148,163,184,0.18)' }, '&::before': { left: '50%', top: 0, bottom: 0, width: '1px' }, '&::after': { top: '50%', left: 0, right: 0, height: '1px' } }} />
-            <Box sx={{ position: 'absolute', left: '50%', top: '50%', width: 22, height: 22, borderRadius: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(248,250,252,0.9)', boxShadow: '0 0 14px rgba(248,250,252,0.5)' }} title="You (listener)" />
-            {tracks.map((track, index) => {
-              const { x, y, z } = worldFromPan(track.azimuth, track.distance, track.height);
-              const left = 50 + x * PCT_PER_UNIT;
-              const top = 50 + z * PCT_PER_UNIT - y * PCT_PER_UNIT * 0.22;
-              return (
-                <Box
-                  key={track.id}
-                  onPointerDown={onDotPointerDown(track.id)}
-                  onWheel={onDotWheel(track.id)}
-                  title={`${track.name} — drag for direction & distance; scroll for height`}
-                  sx={{
-                    position: 'absolute',
-                    left: `${left}%`,
-                    top: `${top}%`,
-                    width: 20,
-                    height: 20,
-                    borderRadius: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    background: dotHue(index, tracks.length),
-                    zIndex: 10 + index,
-                    cursor: locked ? 'not-allowed' : 'grab',
-                    boxShadow: '0 0 12px rgba(0,0,0,0.5)',
-                    border: '2px solid rgba(255,255,255,0.65)',
-                    transition: draggingId.current === track.id ? 'none' : 'left 0.12s, top 0.12s',
-                  }}
-                />
-              );
-            })}
-          </Box>
-          <Typography variant="body2" color="text.secondary">
-            Each dot is one track. Drag around the center for direction and distance; scroll on a dot for height.
-          </Typography>
-        </Paper>
-      </Box>
-    </ToolShell>
+function MapBackdrop() {
+  const theme = useTheme();
+  const ink = theme.palette.text.primary;
+  const accent = theme.palette.primary.main;
+  const inner = 36 * 0.92 * (MIN_PAN_DIST / WORLD_R_FOR_SCALE);
+  const outer = 36 * 0.92 * (MAX_PAN_DIST / WORLD_R_FOR_SCALE);
+  return (
+    <Box component="svg" viewBox="0 0 100 100" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
+      <defs>
+        <radialGradient id="burger-floor">
+          <stop offset="0%" stopColor={accent} stopOpacity="0.16" />
+          <stop offset="100%" stopColor={accent} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r={Math.min(50, outer)} fill="url(#burger-floor)" />
+      {[1, 2, 3, 4].map((m) => (
+        <circle key={m} cx="50" cy="50" r={36 * 0.92 * (m / WORLD_R_FOR_SCALE)} fill="none" stroke={ink} strokeOpacity="0.09" strokeWidth="0.25" />
+      ))}
+      {[1, 2, 3, 4].map((m) => (
+        <text key={m} x={50 + 36 * 0.92 * (m / WORLD_R_FOR_SCALE) + 0.8} y="49" fontSize="1.9" fontFamily={MONO_FONT} fill={ink} fillOpacity="0.3">
+          {m}m
+        </text>
+      ))}
+      <circle cx="50" cy="50" r={inner} fill="none" stroke={accent} strokeOpacity="0.35" strokeWidth="0.25" strokeDasharray="0.8 0.8" />
+      <line x1="50" y1="4" x2="50" y2="96" stroke={ink} strokeOpacity="0.07" strokeWidth="0.25" />
+      <line x1="4" y1="50" x2="96" y2="50" stroke={ink} strokeOpacity="0.07" strokeWidth="0.25" />
+      <text x="50" y="3" fontSize="2.2" fontFamily={MONO_FONT} textAnchor="middle" fill={ink} fillOpacity="0.45">
+        FRONT
+      </text>
+      <text x="50" y="99" fontSize="2.2" fontFamily={MONO_FONT} textAnchor="middle" fill={ink} fillOpacity="0.45">
+        BACK
+      </text>
+      <text x="1" y="50.8" fontSize="2.2" fontFamily={MONO_FONT} fill={ink} fillOpacity="0.45">
+        L
+      </text>
+      <text x="99" y="50.8" fontSize="2.2" fontFamily={MONO_FONT} textAnchor="end" fill={ink} fillOpacity="0.45">
+        R
+      </text>
+      <g>
+        <ellipse cx="50" cy="50" rx="3.4" ry="3.9" fill={theme.palette.background.paper} stroke={ink} strokeOpacity="0.5" strokeWidth="0.35" />
+        <ellipse cx="46.3" cy="50" rx="0.8" ry="1.4" fill={ink} fillOpacity="0.5" />
+        <ellipse cx="53.7" cy="50" rx="0.8" ry="1.4" fill={ink} fillOpacity="0.5" />
+        <path d="M49 46.4 L50 45 L51 46.4" fill="none" stroke={ink} strokeOpacity="0.6" strokeWidth="0.35" />
+      </g>
+    </Box>
   );
 }

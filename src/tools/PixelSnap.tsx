@@ -1,29 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import Checkbox from '@mui/material/Checkbox';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import { ToolShell } from '../components/ToolShell';
+import GridOnRoundedIcon from '@mui/icons-material/GridOnRounded';
 import { FileDropZone } from '../components/FileDropZone';
-import { PreviewSurface } from '../components/PreviewSurface';
 import { DownloadButton } from '../components/DownloadButton';
 import { useNotification } from '../components/NotificationProvider';
+import { Artboard, Panel, PanelSection, Stage, ToolIntro, Workbench } from '../components/Workbench';
+import { FieldLabel, Segmented, Stat, SwitchRow } from '../components/controls';
 import { loadImageFromFile, stripExtension } from '../lib/image';
 import { processPixelSnap, type PotMode, type SnapSettings } from '../lib/pixelSnap';
+import { MONO_FONT } from '../theme';
 
-const PIXEL_SIZES = ['auto', '2', '4', '8', '16', '32', '64'];
-const COLOR_COUNTS = [2, 4, 8, 16, 32, 64, 128, 256];
+const PIXEL_SIZES = ['auto', '2', '4', '8', '16', '32', '64'] as const;
+const COLOR_COUNTS = [2, 4, 8, 16, 32, 64, 128, 256] as const;
 const OUTPUT_SIZES = ['auto', '16', '32', '64', '128', '256', '512', '1024', '2048', '4096'];
-const POT_MODES: { value: PotMode; label: string }[] = [
-  { value: 'balanced', label: 'Balanced (nearest)' },
-  { value: 'up', label: 'Preserve Detail (round up)' },
-  { value: 'down', label: 'Performance (round down)' },
-  { value: 'grid-safe', label: 'Pixel Grid Safe' },
+const POT_MODES: { value: PotMode; label: string; title: string }[] = [
+  { value: 'balanced', label: 'Nearest', title: 'Balanced — nearest power of two' },
+  { value: 'up', label: 'Up', title: 'Preserve detail — round up' },
+  { value: 'down', label: 'Down', title: 'Performance — round down' },
+  { value: 'grid-safe', label: 'Grid-safe', title: 'Keep the pixel grid intact' },
 ];
+
+interface SnapInfo {
+  pixelSize: number;
+  gridWidth: number;
+  gridHeight: number;
+  outWidth: number;
+  outHeight: number;
+  usedTarget: boolean;
+}
 
 export function PixelSnap() {
   const notify = useNotification();
@@ -32,17 +39,21 @@ export function PixelSnap() {
   const afterRef = useRef<HTMLCanvasElement>(null);
   const fileNameRef = useRef('image');
 
-  const [loaded, setLoaded] = useState(false);
-  const [info, setInfo] = useState('');
+  const [fileName, setFileName] = useState<string | null>(null);
+  /** Bumped on every load so the same file dropped twice still re-runs. */
+  const [version, setVersion] = useState(0);
+  const [info, setInfo] = useState<SnapInfo | null>(null);
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
 
-  const [pixelSize, setPixelSize] = useState('auto');
+  const [pixelSize, setPixelSize] = useState<string>('auto');
   const [colors, setColors] = useState(16);
   const [potMode, setPotMode] = useState<PotMode>('balanced');
   const [targetSize, setTargetSize] = useState('auto');
   const [preserveAlpha, setPreserveAlpha] = useState(true);
   const [dither, setDither] = useState(false);
   const [square, setSquare] = useState(false);
+
+  const loaded = fileName !== null;
 
   const run = useCallback(() => {
     if (!imgRef.current) return;
@@ -74,11 +85,14 @@ export function PixelSnap() {
         ctx.drawImage(result.outCanvas, 0, 0);
       }
     }
-    setInfo(
-      `Pixel size: ${result.pixelSize}px${pixelSize === 'auto' ? ' (auto)' : ''}  •  ` +
-        `Internal grid: ${result.gridWidth}×${result.gridHeight}  •  Colors: ${colors}  •  ` +
-        `Output: ${result.outWidth}×${result.outHeight}${result.usedTarget ? ' (target)' : ''}`,
-    );
+    setInfo({
+      pixelSize: result.pixelSize,
+      gridWidth: result.gridWidth,
+      gridHeight: result.gridHeight,
+      outWidth: result.outWidth,
+      outHeight: result.outHeight,
+      usedTarget: result.usedTarget,
+    });
     result.outCanvas.toBlob((blob) => {
       if (!blob) return;
       setDownload((prev) => {
@@ -89,8 +103,8 @@ export function PixelSnap() {
   }, [pixelSize, colors, potMode, targetSize, preserveAlpha, dither, square]);
 
   useEffect(() => {
-    if (loaded) run();
-  }, [loaded, run]);
+    if (version > 0) run();
+  }, [version, run]);
 
   const handleFiles = async (files: File[]) => {
     const file = files[0];
@@ -101,72 +115,129 @@ export function PixelSnap() {
     try {
       imgRef.current = await loadImageFromFile(file);
       fileNameRef.current = stripExtension(file.name) || 'image';
-      setLoaded(true);
-      notify('Image loaded. Adjust settings as needed.', 'success');
+      setFileName(file.name);
+      setVersion((v) => v + 1);
     } catch {
       notify('Could not load that image.', 'error');
     }
   };
 
   return (
-    <ToolShell title="PixelSnap POT" description="Clean up messy pixel-style images: snap them to a consistent pixel grid, reduce the palette, and export a sharp, game-ready power-of-two PNG.">
-      <FileDropZone accept="image/*" title="Drop an image here" hint="or click to browse — PNG, JPG, WEBP, BMP" onFiles={handleFiles} />
-      {loaded && (
-        <>
-          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' } }}>
-            <TextField select label="Pixel size" value={pixelSize} onChange={(e) => setPixelSize(e.target.value)}>
-              {PIXEL_SIZES.map((s) => (
-                <MenuItem key={s} value={s}>
-                  {s === 'auto' ? 'Auto (detect)' : `${s}×`}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField select label="Colors" value={colors} onChange={(e) => setColors(Number(e.target.value))}>
-              {COLOR_COUNTS.map((c) => (
-                <MenuItem key={c} value={c}>
-                  {c}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField select label="Power-of-two mode" value={potMode} onChange={(e) => setPotMode(e.target.value as PotMode)}>
-              {POT_MODES.map((m) => (
-                <MenuItem key={m.value} value={m.value}>
-                  {m.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField select label="Target output size" value={targetSize} onChange={(e) => setTargetSize(e.target.value)}>
-              {OUTPUT_SIZES.map((s) => (
-                <MenuItem key={s} value={s}>
-                  {s === 'auto' ? 'Auto (use POT mode)' : `${s} px`}
-                </MenuItem>
-              ))}
-            </TextField>
+    <Workbench panelWidth={330}>
+      <Panel
+        footer={
+          <DownloadButton
+            size="large"
+            fullWidth
+            href={download?.url ?? ''}
+            download={download?.name ?? ''}
+            disabled={!download}
+            label={info ? `Download ${info.outWidth}×${info.outHeight} PNG` : 'Download'}
+          />
+        }
+      >
+        <ToolIntro />
+        <PanelSection title="Source">
+          <FileDropZone
+            accept="image/*"
+            title={fileName ?? 'Choose an image'}
+            hint={imgRef.current && loaded ? `${imgRef.current.width} × ${imgRef.current.height}px` : 'PNG, JPG, WEBP, BMP'}
+            onFiles={handleFiles}
+          />
+        </PanelSection>
+        <PanelSection title="Grid">
+          <Box>
+            <FieldLabel value={pixelSize === 'auto' && info ? `detected ${info.pixelSize}px` : undefined}>Pixel size</FieldLabel>
+            <Segmented
+              aria-label="Pixel size"
+              wrap
+              value={pixelSize}
+              onChange={setPixelSize}
+              options={PIXEL_SIZES.map((s) => ({ value: s, label: s === 'auto' ? 'Auto' : `${s}×` }))}
+            />
           </Box>
-          <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <FormControlLabel control={<Checkbox checked={preserveAlpha} onChange={(e) => setPreserveAlpha(e.target.checked)} />} label="Preserve transparency" />
-            <FormControlLabel control={<Checkbox checked={dither} onChange={(e) => setDither(e.target.checked)} />} label="Dither colors" />
-            <FormControlLabel control={<Checkbox checked={square} onChange={(e) => setSquare(e.target.checked)} />} label="Force square output" />
-          </Stack>
-          <Button onClick={run} sx={{ alignSelf: 'flex-start' }}>
-            Convert
-          </Button>
-          {info && (
-            <Typography variant="body2" color="text.secondary">
-              {info}
-            </Typography>
-          )}
-          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
-            <PreviewSurface label="Original" checkered>
-              <Box component="canvas" ref={beforeRef} sx={{ maxWidth: '100%' }} />
-            </PreviewSurface>
-            <PreviewSurface label="Snapped (POT)" checkered>
-              <Box component="canvas" ref={afterRef} sx={{ maxWidth: '100%', imageRendering: 'pixelated' }} />
-            </PreviewSurface>
+          <Box>
+            <FieldLabel>Colors</FieldLabel>
+            <Segmented
+              aria-label="Color count"
+              wrap
+              value={colors}
+              onChange={setColors}
+              options={COLOR_COUNTS.map((c) => ({ value: c, label: String(c) }))}
+            />
           </Box>
-          {download && <DownloadButton href={download.url} download={download.name} label="Download Snapped Image" />}
-        </>
-      )}
-    </ToolShell>
+        </PanelSection>
+        <PanelSection title="Power of two">
+          <Segmented aria-label="Power-of-two mode" value={potMode} onChange={setPotMode} options={POT_MODES} />
+          <TextField select label="Target output size" value={targetSize} onChange={(e) => setTargetSize(e.target.value)}>
+            {OUTPUT_SIZES.map((s) => (
+              <MenuItem key={s} value={s}>
+                {s === 'auto' ? 'Auto — follow POT mode' : `${s} px`}
+              </MenuItem>
+            ))}
+          </TextField>
+        </PanelSection>
+        <PanelSection title="Options">
+          <SwitchRow label="Preserve transparency" checked={preserveAlpha} onChange={setPreserveAlpha} />
+          <SwitchRow label="Dither colors" checked={dither} onChange={setDither} />
+          <SwitchRow label="Force square output" checked={square} onChange={setSquare} />
+        </PanelSection>
+        {info && (
+          <PanelSection title="Result">
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <Stat label="Pixel" value={`${info.pixelSize}px${pixelSize === 'auto' ? ' auto' : ''}`} />
+              <Stat label="Grid" value={`${info.gridWidth}×${info.gridHeight}`} />
+              <Stat label="Colors" value={colors} />
+              <Stat label="Output" value={`${info.outWidth}×${info.outHeight}${info.usedTarget ? ' ⌖' : ''}`} accent />
+            </Box>
+          </PanelSection>
+        )}
+      </Panel>
+
+      <Stage backdrop="grid" onFiles={loaded ? handleFiles : undefined}>
+        {!loaded && (
+          <FileDropZone
+            variant="hero"
+            accept="image/*"
+            icon={GridOnRoundedIcon}
+            title="Drop a messy pixel image"
+            hint="Upscaled screenshots, blurry sprites, JPEG-crunched art — it'll find the grid."
+            onFiles={handleFiles}
+          />
+        )}
+        <Box
+          sx={{
+            display: loaded ? 'grid' : 'none',
+            gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
+            gap: { xs: 3, md: 4 },
+            width: '100%',
+            alignItems: 'center',
+          }}
+        >
+          <Compare label="Original" caption={imgRef.current ? `${imgRef.current.width}×${imgRef.current.height}` : ''} pixelated>
+            <canvas ref={beforeRef} />
+          </Compare>
+          <Compare label="Snapped" caption={info ? `${info.outWidth}×${info.outHeight} · ${colors} colors` : ''} pixelated accent>
+            <canvas ref={afterRef} />
+          </Compare>
+        </Box>
+      </Stage>
+    </Workbench>
+  );
+}
+
+function Compare({ label, caption, pixelated, accent, children }: { label: string; caption: string; pixelated?: boolean; accent?: boolean; children: React.ReactNode }) {
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'baseline' }}>
+        <Typography variant="overline" sx={{ color: accent ? 'primary.main' : 'text.secondary' }}>
+          {label}
+        </Typography>
+        <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem', color: 'text.secondary' }}>{caption}</Typography>
+      </Box>
+      <Artboard pixelated={pixelated} sx={{ '& > canvas': { width: '100%', maxHeight: '62vh', objectFit: 'contain' }, width: 'min(100%, 560px)' }}>
+        {children}
+      </Artboard>
+    </Box>
   );
 }

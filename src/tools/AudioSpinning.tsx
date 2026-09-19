@@ -1,38 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Paper from '@mui/material/Paper';
-import Stack from '@mui/material/Stack';
-import Slider from '@mui/material/Slider';
-import MenuItem from '@mui/material/MenuItem';
-import TextField from '@mui/material/TextField';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import Checkbox from '@mui/material/Checkbox';
+import { alpha, useTheme } from '@mui/material/styles';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded';
 import StopRoundedIcon from '@mui/icons-material/StopRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import { ToolShell } from '../components/ToolShell';
+import HeadphonesRoundedIcon from '@mui/icons-material/HeadphonesRounded';
 import { FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
+import { Panel, PanelSection, Stage, StageDock, StageTag, ToolIntro, Workbench } from '../components/Workbench';
+import { FieldLabel, Segmented, SliderField, SwitchRow } from '../components/controls';
 import { OrbitalEngine, type OrbitalParams, type OrbitalTick, type PlaybackState } from '../lib/orbital';
 import type { DistanceModel } from '../lib/spatial';
+import { MONO_FONT } from '../theme';
 
 const RADIUS_MIN = 0.05;
 const RADIUS_MAX = 6;
-
-function LabelledSlider({ label, value, suffix, ...sliderProps }: { label: string; value: number; suffix?: string } & React.ComponentProps<typeof Slider>) {
-  return (
-    <Box>
-      <Typography variant="body2" color="text.secondary" gutterBottom>
-        {label} — {value.toFixed(2)}
-        {suffix ? ` ${suffix}` : ''}
-      </Typography>
-      <Slider value={value} {...sliderProps} />
-    </Box>
-  );
-}
 
 export function AudioSpinning() {
   const notify = useNotification();
@@ -48,11 +35,12 @@ export function AudioSpinning() {
   const [doppler, setDoppler] = useState(1);
   const [distanceModel, setDistanceModel] = useState<DistanceModel>('inverse');
 
-  const [fileName, setFileName] = useState('No file loaded.');
-  const [hasFile, setHasFile] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [status, setStatus] = useState('Load a file to begin.');
   const [tick, setTick] = useState<OrbitalTick>({ angleDeg: 0, x: 0, z: -1.8, playback: 'Stopped' });
   const [rendering, setRendering] = useState(false);
+
+  const hasFile = fileName !== null;
 
   const params: OrbitalParams = {
     speed,
@@ -74,8 +62,8 @@ export function AudioSpinning() {
       (t) => setTick(t),
       (state: PlaybackState) => {
         setTick((prev) => ({ ...prev, playback: state }));
-        if (state === 'Playing') setStatus('Orbiting audio is playing. Use headphones for the full effect.');
-        else if (state === 'Paused') setStatus('Paused. Press Play to continue from the same point.');
+        if (state === 'Playing') setStatus('Orbiting. Use headphones for the full effect.');
+        else if (state === 'Paused') setStatus('Paused — Play continues from the same point.');
         else setStatus('Stopped. Ready to play again.');
       },
     );
@@ -98,10 +86,9 @@ export function AudioSpinning() {
     try {
       await engine.load(files[0]);
       setFileName(files[0].name);
-      setHasFile(true);
-      setStatus('Loaded. Press Play to start orbiting audio.');
+      setStatus('Loaded. Press Play to start the orbit.');
     } catch {
-      setHasFile(false);
+      setFileName(null);
       setStatus('Could not decode that audio file. Try MP3, WAV, M4A, or OGG.');
       notify('Could not decode that audio file.', 'error');
     }
@@ -113,10 +100,10 @@ export function AudioSpinning() {
       return;
     }
     setRendering(true);
-    setStatus('Rendering binaural (3D) mix… This can take a while for long files.');
+    setStatus('Rendering binaural mix… long files take a while.');
     try {
       await engineRef.current.downloadWav();
-      setStatus('Saved binaural WAV (stereo). Use headphones when playing it back.');
+      setStatus('Saved a binaural stereo WAV. Play it back on headphones.');
     } catch {
       notify('Could not render 3D audio. Try a shorter file or another format.', 'error');
       setStatus('Render failed.');
@@ -125,105 +112,196 @@ export function AudioSpinning() {
     }
   };
 
-  const leftPct = 50 + (tick.x / Math.max(radius, 0.05)) * 38;
-  const topPct = 50 + (tick.z / Math.max(radius, 0.05)) * 38;
-
   return (
-    <ToolShell title="Audio Spinning" description="Upload an audio file, press play, and the sound source orbits your head in real time using the Web Audio API. Best with headphones. Fully local — no upload.">
-      <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, alignItems: 'start' }}>
-        <Paper variant="outlined" sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, borderRadius: 3 }}>
-          <FileDropZone accept="audio/*" title={hasFile ? fileName : 'Drop an audio file'} hint="or click to browse" onFiles={handleFiles} />
-          <LabelledSlider label="Orbit speed" value={speed} suffix="rps" min={0.05} max={3} step={0.01} onChange={(_, v) => setSpeed(v as number)} />
-          <LabelledSlider label="Orbit radius" value={radius} suffix="m" min={RADIUS_MIN} max={RADIUS_MAX} step={0.01} onChange={(_, v) => setRadius(v as number)} />
-          <LabelledSlider label="Height" value={height} suffix="m" min={-10} max={10} step={0.01} onChange={(_, v) => setHeight(v as number)} />
-          <LabelledSlider label="Volume" value={volume} min={0} max={2} step={0.01} onChange={(_, v) => setVolume(v as number)} />
-          <LabelledSlider label="Echo (wet)" value={echo} min={0} max={1} step={0.01} onChange={(_, v) => setEcho(v as number)} />
-          <LabelledSlider label="Echo delay" value={echoDelay} suffix="ms" min={20} max={800} step={1} disabled={echoLink} onChange={(_, v) => setEchoDelay(v as number)} />
-          <FormControlLabel control={<Checkbox checked={echoLink} onChange={(e) => setEchoLink(e.target.checked)} />} label="Follow distance — echo delay tracks orbit radius" />
-          <LabelledSlider label="Doppler intensity" value={doppler} min={0} max={4} step={0.01} onChange={(_, v) => setDoppler(v as number)} />
-          <TextField select label="Distance model" value={distanceModel} onChange={(e) => setDistanceModel(e.target.value as DistanceModel)}>
-            <MenuItem value="inverse">inverse</MenuItem>
-            <MenuItem value="linear">linear</MenuItem>
-            <MenuItem value="exponential">exponential</MenuItem>
-          </TextField>
-          <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button onClick={() => void engineRef.current?.play()} disabled={!hasFile} startIcon={<PlayArrowRoundedIcon />}>
-              Play
-            </Button>
-            <Button variant="outlined" onClick={() => engineRef.current?.pause()} disabled={playback !== 'Playing'} startIcon={<PauseRoundedIcon />}>
-              Pause
-            </Button>
-            <Button variant="outlined" color="inherit" onClick={() => engineRef.current?.stop()} disabled={!hasFile} startIcon={<StopRoundedIcon />}>
-              Stop
-            </Button>
-            <Button variant="outlined" onClick={download} disabled={!hasFile || rendering} startIcon={<DownloadRoundedIcon />}>
-              Download 3D WAV
-            </Button>
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            {status}
-          </Typography>
-        </Paper>
+    <Workbench panelWidth={340}>
+      <Stage
+        backdrop="plain"
+        onFiles={hasFile ? handleFiles : undefined}
+        overlay={
+          <>
+            <StageTag>
+              <HeadphonesRoundedIcon sx={{ fontSize: 13, verticalAlign: '-2px', mr: 0.5 }} />
+              headphones recommended
+            </StageTag>
+            {hasFile && (
+              <StageDock>
+                <Tooltip title={playback === 'Playing' ? 'Pause' : 'Play'}>
+                  <IconButton
+                    onClick={() => (playback === 'Playing' ? engineRef.current?.pause() : void engineRef.current?.play())}
+                    sx={(t) => ({ bgcolor: 'primary.main', color: t.palette.primary.contrastText, '&:hover': { bgcolor: 'primary.dark' } })}
+                  >
+                    {playback === 'Playing' ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Stop">
+                  <IconButton onClick={() => engineRef.current?.stop()}>
+                    <StopRoundedIcon />
+                  </IconButton>
+                </Tooltip>
+                <Box sx={{ px: 1.5, minWidth: 0 }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 600, maxWidth: 220 }}>
+                    {fileName}
+                  </Typography>
+                  <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.72rem', color: 'text.secondary' }}>
+                    {playback.toLowerCase()} · {tick.angleDeg.toFixed(0).padStart(3, '0')}°
+                  </Typography>
+                </Box>
+              </StageDock>
+            )}
+          </>
+        }
+      >
+        {!hasFile ? (
+          <FileDropZone
+            variant="hero"
+            accept="audio/*"
+            icon={HeadphonesRoundedIcon}
+            title="Drop a song to send it spinning"
+            hint="MP3, WAV, M4A or OGG. It stays on your machine."
+            onFiles={handleFiles}
+          />
+        ) : (
+          <OrbitRadar x={tick.x} z={tick.z} radius={radius} height={height} angle={tick.angleDeg} playing={playback === 'Playing'} />
+        )}
+      </Stage>
 
-        <Paper variant="outlined" sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 3 }}>
-          <Box
-            sx={{
-              position: 'relative',
-              width: '100%',
-              aspectRatio: '1 / 1',
-              borderRadius: 3,
-              overflow: 'hidden',
-              background: 'radial-gradient(circle at 50% 50%, rgba(99,102,241,0.18), transparent 70%)',
-              border: '1px solid',
-              borderColor: 'divider',
-            }}
-          >
-            <Box sx={{ position: 'absolute', inset: 0, '&::before, &::after': { content: '""', position: 'absolute', background: 'rgba(148,163,184,0.18)' }, '&::before': { left: '50%', top: 0, bottom: 0, width: '1px' }, '&::after': { top: '50%', left: 0, right: 0, height: '1px' } }} />
-            <Box
-              component="svg"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-              sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-            >
-              <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(96,165,250,0.35)" strokeWidth="0.5" strokeDasharray="2 2" />
-            </Box>
-            <Box sx={{ position: 'absolute', left: '50%', top: '50%', width: 16, height: 16, borderRadius: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(248,250,252,0.85)', boxShadow: '0 0 12px rgba(248,250,252,0.6)' }} />
-            <Box
-              sx={{
-                position: 'absolute',
-                left: `${leftPct}%`,
-                top: `${topPct}%`,
-                width: 18,
-                height: 18,
-                borderRadius: '50%',
-                transform: 'translate(-50%, -50%)',
-                background: '#60a5fa',
-                boxShadow: '0 0 18px rgba(96,165,250,0.85)',
-                transition: playback === 'Playing' ? 'none' : 'left 0.2s, top 0.2s',
-              }}
+      <Panel
+        footer={
+          <>
+            <Button size="large" variant="outlined" onClick={download} disabled={!hasFile || rendering} startIcon={<DownloadRoundedIcon />}>
+              {rendering ? 'Rendering…' : 'Download 3D WAV'}
+            </Button>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+              {status}
+            </Typography>
+          </>
+        }
+      >
+        <ToolIntro />
+        <PanelSection title="Source">
+          <FileDropZone accept="audio/*" title={fileName ?? 'Choose an audio file'} hint="MP3, WAV, M4A, OGG" onFiles={handleFiles} />
+        </PanelSection>
+        <PanelSection title="Orbit">
+          <SliderField label="Speed" value={speed} onChange={setSpeed} min={0.05} max={3} step={0.01} format={(v) => `${v.toFixed(2)} rps`} />
+          <SliderField label="Radius" value={radius} onChange={setRadius} min={RADIUS_MIN} max={RADIUS_MAX} step={0.01} format={(v) => `${v.toFixed(2)} m`} />
+          <SliderField label="Height" value={height} onChange={setHeight} min={-10} max={10} step={0.01} format={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`} />
+        </PanelSection>
+        <PanelSection title="Sound">
+          <SliderField label="Volume" value={volume} onChange={setVolume} min={0} max={2} step={0.01} format={(v) => `${Math.round(v * 100)}%`} />
+          <SliderField label="Doppler" value={doppler} onChange={setDoppler} min={0} max={4} step={0.01} format={(v) => `${v.toFixed(2)}×`} />
+          <Box>
+            <FieldLabel>Distance falloff</FieldLabel>
+            <Segmented
+              aria-label="Distance model"
+              value={distanceModel}
+              onChange={setDistanceModel}
+              options={[
+                { value: 'inverse', label: 'Inverse' },
+                { value: 'linear', label: 'Linear' },
+                { value: 'exponential', label: 'Exponential' },
+              ]}
             />
           </Box>
-          <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <Readout label="Angle" value={`${tick.angleDeg.toFixed(0)}°`} />
-            <Readout label="Direction" value="Clockwise" />
-            <Readout label="X / Z" value={`${tick.x.toFixed(2)} / ${tick.z.toFixed(2)}`} />
-            <Readout label="Playback" value={tick.playback} />
-          </Box>
-        </Paper>
-      </Box>
-    </ToolShell>
+        </PanelSection>
+        <PanelSection title="Echo">
+          <SliderField label="Wet" value={echo} onChange={setEcho} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} />
+          <SliderField label="Delay" value={echoDelay} onChange={setEchoDelay} min={20} max={800} step={1} disabled={echoLink} format={(v) => `${v} ms`} />
+          <SwitchRow label="Follow distance" hint="Delay tracks the orbit radius" checked={echoLink} onChange={setEchoLink} />
+        </PanelSection>
+      </Panel>
+    </Workbench>
   );
 }
 
-function Readout({ label, value }: { label: string; value: string }) {
+function OrbitRadar({ x, z, radius, height, angle, playing }: { x: number; z: number; radius: number; height: number; angle: number; playing: boolean }) {
+  const theme = useTheme();
+  const accent = theme.palette.primary.main;
+  const ink = theme.palette.text.primary;
+  const R = 38;
+  const r = Math.max(radius, 0.05);
+  const cx = 50 + (x / r) * R;
+  const cy = 50 + (z / r) * R;
+  // Height scales the dot: above your head is bigger, below is smaller.
+  const dotR = Math.max(1.6, 3 + height * 0.15);
+
   return (
-    <Paper variant="outlined" sx={{ px: 2, py: 1.25, borderRadius: 2 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-        {label}
+    <Box sx={{ width: 'min(100%, 72vh, 640px)', aspectRatio: '1 / 1', position: 'relative', mb: 8 }}>
+      <Box component="svg" viewBox="0 0 100 100" sx={{ width: '100%', height: '100%', overflow: 'visible' }}>
+        <defs>
+          <radialGradient id="spin-glow">
+            <stop offset="0%" stopColor={accent} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={accent} stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id="spin-sweep" gradientUnits="userSpaceOnUse" x1="50" y1="50" x2={cx} y2={cy}>
+            <stop offset="0%" stopColor={accent} stopOpacity="0" />
+            <stop offset="100%" stopColor={accent} stopOpacity="0.8" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="48" fill="url(#spin-glow)" />
+        {[0.25, 0.5, 0.75].map((f) => (
+          <circle key={f} cx="50" cy="50" r={48 * f} fill="none" stroke={ink} strokeOpacity="0.08" strokeWidth="0.25" />
+        ))}
+        <line x1="50" y1="2" x2="50" y2="98" stroke={ink} strokeOpacity="0.08" strokeWidth="0.25" />
+        <line x1="2" y1="50" x2="98" y2="50" stroke={ink} strokeOpacity="0.08" strokeWidth="0.25" />
+        {Array.from({ length: 72 }, (_, i) => {
+          const a = (i / 72) * Math.PI * 2;
+          const long = i % 6 === 0;
+          const r1 = 48;
+          const r2 = long ? 45.5 : 47;
+          return (
+            <line
+              key={i}
+              x1={50 + Math.sin(a) * r1}
+              y1={50 - Math.cos(a) * r1}
+              x2={50 + Math.sin(a) * r2}
+              y2={50 - Math.cos(a) * r2}
+              stroke={ink}
+              strokeOpacity={long ? 0.35 : 0.15}
+              strokeWidth="0.3"
+            />
+          );
+        })}
+        {(['FRONT', 'RIGHT', 'BACK', 'LEFT'] as const).map((label, i) => {
+          const a = (i / 4) * Math.PI * 2;
+          return (
+            <text
+              key={label}
+              x={50 + Math.sin(a) * 42}
+              y={50 - Math.cos(a) * 42 + 1}
+              fontSize="2.2"
+              fontFamily={MONO_FONT}
+              textAnchor="middle"
+              fill={ink}
+              fillOpacity="0.4"
+              letterSpacing="0.2"
+            >
+              {label}
+            </text>
+          );
+        })}
+        <circle cx="50" cy="50" r={R} fill="none" stroke={accent} strokeOpacity="0.45" strokeWidth="0.35" strokeDasharray="1 1.2" />
+        <line x1="50" y1="50" x2={cx} y2={cy} stroke="url(#spin-sweep)" strokeWidth="0.6" />
+        {/* Listener, seen from above, facing up. */}
+        <g>
+          <ellipse cx="50" cy="50" rx="4" ry="4.6" fill={theme.palette.background.paper} stroke={ink} strokeOpacity="0.5" strokeWidth="0.4" />
+          <ellipse cx="45.6" cy="50" rx="0.9" ry="1.6" fill={ink} fillOpacity="0.5" />
+          <ellipse cx="54.4" cy="50" rx="0.9" ry="1.6" fill={ink} fillOpacity="0.5" />
+          <path d="M48.8 45.8 L50 44.2 L51.2 45.8" fill="none" stroke={ink} strokeOpacity="0.6" strokeWidth="0.4" />
+        </g>
+        {/* Source */}
+        <circle cx={cx} cy={cy} r={dotR * 2.4} fill={accent} fillOpacity={playing ? 0.18 : 0.1}>
+          {playing && <animate attributeName="r" values={`${dotR * 1.6};${dotR * 3};${dotR * 1.6}`} dur="1.4s" repeatCount="indefinite" />}
+        </circle>
+        <circle cx={cx} cy={cy} r={dotR} fill={accent} stroke="#fff" strokeWidth="0.5" />
+      </Box>
+      <Box sx={{ position: 'absolute', left: 0, bottom: -4, display: 'flex', gap: 3, fontFamily: MONO_FONT, fontSize: '0.72rem', color: 'text.secondary' }}>
+        <span>θ {angle.toFixed(0)}°</span>
+        <span>x {x.toFixed(2)}</span>
+        <span>z {z.toFixed(2)}</span>
+      </Box>
+      <Typography sx={{ position: 'absolute', right: 0, bottom: -4, fontFamily: MONO_FONT, fontSize: '0.72rem', color: alpha(accent, 0.9) }}>
+        r {radius.toFixed(2)}m · h {height.toFixed(1)}m
       </Typography>
-      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-        {value}
-      </Typography>
-    </Paper>
+    </Box>
   );
 }

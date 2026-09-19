@@ -1,81 +1,145 @@
-import { createTheme, type Theme, type ThemeOptions } from '@mui/material/styles';
+import { alpha, createTheme, type Theme } from '@mui/material/styles';
 
 export type ThemeMode = 'light' | 'dark';
 
-const sharedTypography: ThemeOptions['typography'] = {
-  fontFamily: "'DM Sans', system-ui, -apple-system, sans-serif",
-  h1: { fontWeight: 700, letterSpacing: '-0.02em' },
-  h2: { fontWeight: 700, letterSpacing: '-0.01em' },
-  h3: { fontWeight: 600 },
-  h4: { fontWeight: 600 },
-  h5: { fontWeight: 600 },
-  h6: { fontWeight: 600 },
-  button: { fontWeight: 600, textTransform: 'none' },
-};
+export const BODY_FONT = "'Roboto Flex', Roboto, system-ui, -apple-system, sans-serif";
+export const DISPLAY_FONT = BODY_FONT;
+export const MONO_FONT = "'Roboto Mono', ui-monospace, 'SFMono-Regular', monospace";
 
-const MONO = "'JetBrains Mono', ui-monospace, monospace";
+/** Accent for the app chrome (app bar, tabs). Tools never change it. */
+export const APP_ACCENT = '#6366f1';
 
-function buildTheme(mode: ThemeMode): Theme {
+export interface ThemeRequest {
+  mode: ThemeMode;
+  accent: string;
+  /** Replace the body font (e.g. a terminal-style tool going all-mono). */
+  bodyFont?: string;
+}
+
+// Material 3-style neutral surfaces.
+const NEUTRALS = {
+  dark: {
+    default: '#111318',
+    paper: '#1a1c21',
+    raised: '#23262c',
+    divider: 'rgba(255, 255, 255, 0.1)',
+    text: '#e3e3e8',
+    muted: '#a0a2ab',
+  },
+  light: {
+    default: '#f5f6fa',
+    paper: '#ffffff',
+    raised: '#ffffff',
+    divider: 'rgba(0, 0, 0, 0.1)',
+    text: '#1b1c20',
+    muted: '#5d5f69',
+  },
+} as const;
+
+declare module '@mui/material/styles' {
+  interface TypeBackground {
+    raised: string;
+  }
+}
+
+function buildTheme({ mode, accent, bodyFont = BODY_FONT }: ThemeRequest): Theme {
+  const n = NEUTRALS[mode];
   const isDark = mode === 'dark';
+  const outline = isDark ? 'rgba(255,255,255,0.24)' : 'rgba(0,0,0,0.24)';
 
   return createTheme({
-    cssVariables: true,
     palette: {
       mode,
-      primary: { main: '#6366f1' },
-      secondary: { main: '#22d3ee' },
-      ...(isDark
-        ? {
-            background: { default: '#0c1222', paper: '#131c30' },
-            divider: 'rgba(148, 163, 184, 0.16)',
-            text: { primary: '#f8fafc', secondary: '#94a3b8' },
-          }
-        : {
-            background: { default: '#f1f5f9', paper: '#ffffff' },
-            divider: 'rgba(15, 23, 42, 0.12)',
-            text: { primary: '#0f172a', secondary: '#475569' },
-          }),
+      primary: { main: accent },
+      background: { default: n.default, paper: n.paper, raised: n.raised },
+      divider: n.divider,
+      text: { primary: n.text, secondary: n.muted },
     },
-    shape: { borderRadius: 14 },
-    typography: sharedTypography,
+    shape: { borderRadius: 12 },
+    typography: {
+      fontFamily: bodyFont,
+      h4: { fontWeight: 600, letterSpacing: '-0.01em' },
+      h5: { fontWeight: 600, letterSpacing: '-0.005em' },
+      h6: { fontWeight: 600 },
+      button: { fontWeight: 600, textTransform: 'none', letterSpacing: '0.01em' },
+      overline: { fontWeight: 600, letterSpacing: '0.08em', fontSize: '0.7rem', lineHeight: 1.6 },
+    },
     components: {
       MuiCssBaseline: {
         styleOverrides: {
-          'code, pre, textarea.mono': { fontFamily: MONO },
-          '::-webkit-scrollbar': { width: 10, height: 10 },
-          '::-webkit-scrollbar-thumb': {
-            backgroundColor: isDark ? 'rgba(148,163,184,0.3)' : 'rgba(15,23,42,0.2)',
-            borderRadius: 8,
-          },
+          body: { backgroundColor: n.default },
+          'code, pre, kbd': { fontFamily: MONO_FONT },
         },
       },
       MuiPaper: {
-        styleOverrides: {
-          root: { backgroundImage: 'none' },
-        },
+        styleOverrides: { root: { backgroundImage: 'none' } },
       },
       MuiButton: {
         defaultProps: { variant: 'contained', disableElevation: true },
-        styleOverrides: { root: { borderRadius: 10 } },
+        styleOverrides: {
+          root: { borderRadius: 999, paddingInline: 18 },
+          sizeSmall: { paddingInline: 12 },
+          sizeLarge: { paddingBlock: 10 },
+          outlined: { borderColor: outline },
+        },
+      },
+      MuiTextField: {
+        defaultProps: { size: 'small', fullWidth: true },
+      },
+      MuiOutlinedInput: {
+        styleOverrides: { root: { borderRadius: 8 } },
+      },
+      MuiSlider: {
+        defaultProps: { size: 'small' },
+      },
+      MuiToggleButtonGroup: {
+        styleOverrides: {
+          grouped: {
+            borderColor: outline,
+            '&:first-of-type': { borderTopLeftRadius: 999, borderBottomLeftRadius: 999 },
+            '&:last-of-type': { borderTopRightRadius: 999, borderBottomRightRadius: 999 },
+          },
+        },
+      },
+      MuiToggleButton: {
+        styleOverrides: {
+          root: {
+            textTransform: 'none',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            paddingBlock: 6,
+            color: n.text,
+            '&.Mui-selected': {
+              color: n.text,
+              backgroundColor: alpha(accent, isDark ? 0.3 : 0.16),
+              '&:hover': { backgroundColor: alpha(accent, isDark ? 0.36 : 0.22) },
+            },
+          },
+        },
       },
       MuiTab: {
         styleOverrides: {
-          root: { minHeight: 56, fontWeight: 600, textTransform: 'none' },
+          root: { textTransform: 'none', fontWeight: 600, minHeight: 48, letterSpacing: '0.01em' },
         },
+      },
+      MuiDialog: {
+        styleOverrides: { paper: { borderRadius: 24 } },
+      },
+      MuiLinearProgress: {
+        styleOverrides: { root: { borderRadius: 4, height: 6 } },
       },
     },
   });
 }
 
-const themeCache = new Map<ThemeMode, Theme>();
+const themeCache = new Map<string, Theme>();
 
-export function getTheme(mode: ThemeMode): Theme {
-  let theme = themeCache.get(mode);
+export function getTheme(request: ThemeRequest): Theme {
+  const key = `${request.mode}|${request.accent}|${request.bodyFont ?? ''}`;
+  let theme = themeCache.get(key);
   if (!theme) {
-    theme = buildTheme(mode);
-    themeCache.set(mode, theme);
+    theme = buildTheme(request);
+    themeCache.set(key, theme);
   }
   return theme;
 }
-
-export const MONO_FONT = MONO;

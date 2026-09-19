@@ -27,7 +27,7 @@ export class Viewer360Engine {
     this.renderer.domElement.style.height = '100%';
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0c1222);
+    this.scene.background = new THREE.Color(0x050506);
 
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 4000);
     this.camera.position.set(0, 0, 0);

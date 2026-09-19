@@ -30,8 +30,8 @@ export function renderCsvTable(text: string): HTMLCanvasElement {
   if (!rows.length) throw new Error('No valid rows');
 
   const cellPadding = 16;
-  const font = '16px "DM Sans", Arial, sans-serif';
-  const headerFont = 'bold 18px "DM Sans", Arial, sans-serif';
+  const font = '16px "Roboto Flex", Roboto, Arial, sans-serif';
+  const headerFont = 'bold 18px "Roboto Flex", Roboto, Arial, sans-serif';
   const rowHeight = 36;
   const headerHeight = 44;
   const borderColor = '#334155';

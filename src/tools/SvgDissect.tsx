@@ -1,22 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Collapse from '@mui/material/Collapse';
-import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
-import Paper from '@mui/material/Paper';
-import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import { alpha } from '@mui/material/styles';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
-import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
-import { ToolShell } from '../components/ToolShell';
-import { FileDropZone } from '../components/FileDropZone';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
+import { FileButton, FileDropZone } from '../components/FileDropZone';
 import { useNotification } from '../components/NotificationProvider';
+import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../components/Workbench';
+import { Stat } from '../components/controls';
 import {
   describeNode,
   ElementRegistry,
@@ -26,16 +25,18 @@ import {
   TransformStore,
   type RegistryNode,
 } from '../lib/svgDissect';
+import { MONO_FONT } from '../theme';
 
 interface LayerNodeProps {
   node: RegistryNode;
+  depth: number;
   selectedId: string | null;
   hoveredId: string | null;
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }
 
-function LayerNode({ node, selectedId, hoveredId, onSelect, onHover }: LayerNodeProps) {
+function LayerNode({ node, depth, selectedId, hoveredId, onSelect, onHover }: LayerNodeProps) {
   const [expanded, setExpanded] = useState(true);
   const details = describeNode(node, false);
   const hasChildren = node.children.length > 0;
@@ -49,17 +50,18 @@ function LayerNode({ node, selectedId, hoveredId, onSelect, onHover }: LayerNode
         onClick={() => onSelect(node.id)}
         onMouseEnter={() => onHover(node.id)}
         onMouseLeave={() => onHover(null)}
-        sx={{
+        sx={(theme) => ({
           display: 'flex',
           alignItems: 'center',
-          minHeight: 30,
-          px: 0.5,
-          borderRadius: 1,
+          minHeight: 28,
+          pl: depth * 1.5,
+          pr: 1,
+          borderRadius: 1.5,
           cursor: 'pointer',
-          bgcolor: active ? 'action.selected' : hovered ? 'action.hover' : 'transparent',
-          boxShadow: active ? 'inset 2px 0 0 var(--mui-palette-primary-main)' : 'none',
-          '&:hover': { bgcolor: 'action.hover' },
-        }}
+          color: active ? 'primary.main' : 'text.primary',
+          bgcolor: active ? alpha(theme.palette.primary.main, 0.14) : hovered ? 'action.hover' : 'transparent',
+          '&:hover': { bgcolor: active ? undefined : 'action.hover' },
+        })}
       >
         {hasChildren ? (
           <IconButton
@@ -70,50 +72,51 @@ function LayerNode({ node, selectedId, hoveredId, onSelect, onHover }: LayerNode
               event.stopPropagation();
               setExpanded((value) => !value);
             }}
-            sx={{ width: 24, height: 24 }}
+            sx={{ width: 22, height: 22, color: 'text.secondary' }}
           >
-            <ChevronRightRoundedIcon
-              sx={{ fontSize: 17, transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 150ms' }}
-            />
+            <ChevronRightRoundedIcon sx={{ fontSize: 16, transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 150ms' }} />
           </IconButton>
         ) : (
-          <Box sx={{ width: 24, flexShrink: 0 }} />
+          <Box sx={{ width: 22, flexShrink: 0, display: 'grid', placeItems: 'center' }}>
+            <Box sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: 'text.secondary', opacity: 0.5 }} />
+          </Box>
         )}
-        <Typography
-          component="div"
-          variant="caption"
-          noWrap
-          sx={{ minWidth: 0, fontFamily: 'monospace', lineHeight: 1.4 }}
-        >
-          <Box component="span" sx={{ color: 'primary.main', fontWeight: 700 }}>
+        <Typography component="div" noWrap sx={{ minWidth: 0, fontFamily: MONO_FONT, fontSize: '0.76rem', lineHeight: 1.4 }}>
+          <Box component="span" sx={{ fontWeight: 600, color: active ? 'primary.main' : 'text.primary' }}>
             {node.tag}
           </Box>
-          {details.id && <Box component="span">#{details.id}</Box>}
+          {details.id && (
+            <Box component="span" sx={{ color: 'primary.main', opacity: 0.85 }}>
+              #{details.id}
+            </Box>
+          )}
           {details.classes.length > 0 && (
             <Box component="span" color="text.secondary">
               .{details.classes.join('.')}
+            </Box>
+          )}
+          {hasChildren && (
+            <Box component="span" color="text.secondary" sx={{ ml: 0.75, opacity: 0.6 }}>
+              {node.children.length}
             </Box>
           )}
         </Typography>
       </Box>
       {hasChildren && (
         <Collapse in={expanded} timeout="auto" unmountOnExit>
-          <Box component="ul" sx={{ m: 0, ml: 1.5, pl: 1, borderLeft: '1px solid', borderColor: 'divider' }}>
+          <Box component="ul" sx={{ m: 0, p: 0 }}>
             {node.children.map((child) => (
-              <LayerNode
-                key={child.id}
-                node={child}
-                selectedId={selectedId}
-                hoveredId={hoveredId}
-                onSelect={onSelect}
-                onHover={onHover}
-              />
+              <LayerNode key={child.id} node={child} depth={depth + 1} selectedId={selectedId} hoveredId={hoveredId} onSelect={onSelect} onHover={onHover} />
             ))}
           </Box>
         </Collapse>
       )}
     </Box>
   );
+}
+
+function countNodes(node: RegistryNode): number {
+  return 1 + node.children.reduce((n, c) => n + countNodes(c), 0);
 }
 
 interface HoverCard {
@@ -136,10 +139,10 @@ export function SvgDissect() {
   const transformsRef = useRef(new TransformStore());
   const interactionRef = useRef<InteractionController | null>(null);
   const [root, setRoot] = useState<RegistryNode | null>(null);
+  const [fileName, setFileName] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [layersOpen, setLayersOpen] = useState(true);
-  const [dragActive, setDragActive] = useState(false);
   const [hoverCard, setHoverCard] = useState<HoverCard | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -191,11 +194,11 @@ export function SvgDissect() {
         svgRef.current = svg;
         registryRef.current = registry;
         setRoot(registry.root);
+        setFileName(file.name);
         setSelectedId(null);
         setHoveredId(null);
         setHoverCard(null);
         setContextMenu(null);
-        notify(`${file.name} loaded. Hover, select, or drag any visible element.`, 'success');
       } catch (error) {
         notify(error instanceof SvgLoadError ? error.message : 'Could not load that SVG.', 'error');
       }
@@ -219,145 +222,129 @@ export function SvgDissect() {
     setContextMenu(null);
   };
 
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragActive(false);
-    void handleFiles(Array.from(event.dataTransfer.files));
-  };
-
   const tooltipDetails = hoverCard ? describeNode(hoverCard.node) : null;
   const menuCanReset = contextMenu ? transformsRef.current.hasMoved(contextMenu.node.id) : false;
+  const selectedNode = selectedId ? registryRef.current?.get(selectedId) : undefined;
+  const selectedDetails = selectedNode ? describeNode(selectedNode) : null;
+  const showPanel = !root || layersOpen;
 
   return (
-    <ToolShell
-      title="SVG Dissect"
-      description="Inspect an SVG's layer tree, identify individual shapes, and drag elements apart to understand how the artwork is constructed."
-      action={
-        root ? (
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button component="label" startIcon={<UploadFileRoundedIcon />}>
-              Open another SVG
-              <input
-                type="file"
-                accept=".svg,image/svg+xml"
-                hidden
-                onChange={(event) => {
-                  void handleFiles(Array.from(event.target.files ?? []));
-                  event.target.value = '';
-                }}
-              />
-            </Button>
-            <Button variant="outlined" startIcon={<RestartAltRoundedIcon />} onClick={resetAll}>
-              Reset all
-            </Button>
-            <Tooltip title={layersOpen ? 'Hide layer panel' : 'Show layer panel'}>
-              <IconButton color={layersOpen ? 'primary' : 'default'} onClick={() => setLayersOpen((value) => !value)}>
-                <LayersRoundedIcon />
-              </IconButton>
-            </Tooltip>
-          </Stack>
-        ) : undefined
-      }
-    >
-      {!root ? (
-        <FileDropZone
-          accept=".svg,image/svg+xml"
-          title="Drop an SVG file here"
-          hint="or click to browse — the file stays in your browser"
-          onFiles={(files) => void handleFiles(files)}
-        />
-      ) : (
-        <Paper
-          variant="outlined"
-          sx={{ display: 'flex', height: { xs: 520, md: 660 }, minHeight: 0, overflow: 'hidden', borderRadius: 3 }}
-        >
-          {layersOpen && (
-            <Box
-              component="aside"
-              aria-label="SVG layers"
-              sx={{ width: { xs: 190, sm: 270 }, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}
-            >
-              <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, py: 1 }}>
-                Layers
-              </Typography>
-              <Divider />
-              <Box sx={{ flex: 1, overflow: 'auto', p: 0.75 }}>
-                <Box component="ul" sx={{ m: 0, p: 0 }}>
-                  <LayerNode
-                    node={root}
-                    selectedId={selectedId}
-                    hoveredId={hoveredId}
-                    onSelect={selectLayer}
-                    onHover={hoverLayer}
-                  />
+    <Workbench panelWidth={showPanel ? 300 : 0}>
+      {showPanel && (
+        <Panel>
+          {!root ? (
+            <ToolIntro />
+          ) : (
+            <>
+              <Box sx={{ px: 2, pt: 2, pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="overline" color="text.secondary">
+                    Layers · {countNodes(root)}
+                  </Typography>
+                  <Typography noWrap sx={{ fontWeight: 650, fontSize: '0.9rem' }} title={fileName}>
+                    {fileName}
+                  </Typography>
                 </Box>
               </Box>
-            </Box>
+              <Box component="ul" sx={{ m: 0, px: 1, pb: 2, flex: 1, overflowY: 'auto', minHeight: 200 }}>
+                <LayerNode node={root} depth={0} selectedId={selectedId} hoveredId={hoveredId} onSelect={selectLayer} onHover={hoverLayer} />
+              </Box>
+              {selectedNode && selectedDetails && (
+                <PanelSection title="Selected">
+                  <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.8rem', wordBreak: 'break-all' }}>
+                    <Box component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                      &lt;{selectedNode.tag}&gt;
+                    </Box>
+                    {selectedDetails.id && ` #${selectedDetails.id}`}
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                    <Stat label="Box" value={selectedDetails.dimensions} />
+                    <Stat label="Children" value={selectedNode.children.length} />
+                  </Box>
+                  {selectedDetails.classes.length > 0 && <Stat label="Classes" value={selectedDetails.classes.join(' ')} />}
+                </PanelSection>
+              )}
+            </>
           )}
-          {layersOpen && <Divider orientation="vertical" flexItem />}
-          <Box
-            onDragEnter={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={handleDrop}
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflow: 'auto',
-              p: 3,
-              outline: dragActive ? '2px dashed' : 'none',
-              outlineColor: 'primary.main',
-              outlineOffset: -8,
-              bgcolor: 'background.default',
-              backgroundImage:
-                'linear-gradient(45deg, rgba(127,127,127,.08) 25%, transparent 25%), linear-gradient(-45deg, rgba(127,127,127,.08) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(127,127,127,.08) 75%), linear-gradient(-45deg, transparent 75%, rgba(127,127,127,.08) 75%)',
-              backgroundSize: '16px 16px',
-              backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0',
-              '& svg': { maxWidth: '100%', maxHeight: '100%', display: 'block', touchAction: 'none' },
-              '& svg [data-dissect-id].dissect-hover': { outline: '2px solid #22c55e', outlineOffset: '1px' },
-              '& svg [data-dissect-id].dissect-selected': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '1px' },
-              '& svg [data-dissect-id].dissect-dragging': { cursor: 'grabbing' },
-            }}
-          >
-            <Box ref={canvasRef} sx={{ display: 'contents' }} />
-          </Box>
-        </Paper>
+        </Panel>
       )}
 
+      <Stage
+        backdrop="checker"
+        onFiles={root ? (files) => void handleFiles(files) : undefined}
+        dropLabel="Drop to open another SVG"
+        overlay={
+          root && (
+            <StageDock position="top">
+              <Tooltip title={layersOpen ? 'Hide layers' : 'Show layers'}>
+                <IconButton size="small" color={layersOpen ? 'primary' : 'default'} onClick={() => setLayersOpen((v) => !v)} aria-label="Toggle layers panel">
+                  <LayersRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Reset all positions">
+                <IconButton size="small" onClick={resetAll} aria-label="Reset all positions">
+                  <RestartAltRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <FileButton size="small" variant="text" accept=".svg,image/svg+xml" onFiles={(files) => void handleFiles(files)} startIcon={<FolderOpenRoundedIcon />}>
+                Open
+              </FileButton>
+              <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.7rem', color: 'text.secondary', pr: 1, display: { xs: 'none', sm: 'block' } }}>
+                drag shapes · right-click to reset one
+              </Typography>
+            </StageDock>
+          )
+        }
+        sx={{
+          '& svg': { maxWidth: '100%', maxHeight: '100%', display: 'block', touchAction: 'none' },
+          '& svg [data-dissect-id].dissect-hover': { outline: '2px solid #22c55e', outlineOffset: '1px' },
+          '& svg [data-dissect-id].dissect-selected': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '1px' },
+          '& svg [data-dissect-id].dissect-dragging': { cursor: 'grabbing' },
+        }}
+      >
+        {!root ? (
+          <FileDropZone
+            variant="hero"
+            accept=".svg,image/svg+xml"
+            icon={AccountTreeRoundedIcon}
+            title="Drop an SVG to dissect"
+            hint="Hover to identify shapes, drag them apart, and browse the full layer tree."
+            onFiles={(files) => void handleFiles(files)}
+          />
+        ) : (
+          <Box sx={{ flex: 1, width: '100%', minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pt: 5 }}>
+            <Box ref={canvasRef} sx={{ display: 'contents' }} />
+          </Box>
+        )}
+      </Stage>
+
       {hoverCard && tooltipDetails && (
-        <Paper
-          elevation={8}
+        <Box
           sx={{
             position: 'fixed',
             zIndex: 1500,
             pointerEvents: 'none',
-            left: Math.min(hoverCard.x + 12, window.innerWidth - 220),
-            top: Math.min(hoverCard.y + 12, window.innerHeight - 72),
+            left: Math.min(hoverCard.x + 14, window.innerWidth - 220),
+            top: Math.min(hoverCard.y + 14, window.innerHeight - 72),
             px: 1.25,
             py: 0.75,
-            border: '1px solid',
-            borderColor: 'divider',
-            fontFamily: 'monospace',
+            borderRadius: 2,
+            bgcolor: '#17171b',
+            color: '#f1f1f3',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 10px 30px -8px rgba(0,0,0,0.6)',
+            fontFamily: MONO_FONT,
+            fontSize: '0.75rem',
+            lineHeight: 1.5,
           }}
         >
-          <Typography variant="caption" component="div" sx={{ fontFamily: 'inherit' }}>
-            <Box component="span" color="primary.main" sx={{ fontWeight: 700 }}>
-              {hoverCard.node.tag}
-            </Box>
-            {tooltipDetails.id ? `#${tooltipDetails.id}` : ''}
-            {tooltipDetails.classes.length ? ` .${tooltipDetails.classes.join('.')}` : ''}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" component="div" sx={{ fontFamily: 'inherit' }}>
-            {tooltipDetails.dimensions}
-          </Typography>
-        </Paper>
+          <Box component="span" sx={{ color: 'primary.light', fontWeight: 700 }}>
+            {hoverCard.node.tag}
+          </Box>
+          {tooltipDetails.id ? `#${tooltipDetails.id}` : ''}
+          {tooltipDetails.classes.length ? ` .${tooltipDetails.classes.join('.')}` : ''}
+          <Box sx={{ color: 'rgba(255,255,255,0.55)' }}>{tooltipDetails.dimensions}</Box>
+        </Box>
       )}
 
       <Menu
@@ -370,6 +357,6 @@ export function SvgDissect() {
           Reset position
         </MenuItem>
       </Menu>
-    </ToolShell>
+    </Workbench>
   );
 }

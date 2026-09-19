@@ -148,7 +148,7 @@ export function drawResized(
   return output;
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob> {
+export function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error(`Could not encode ${mime}`))),
@@ -231,7 +231,7 @@ function magickFormatFor(magick: MagickModule, format: OutputFormat) {
   return map[format];
 }
 
-async function convertWithMagick(
+export async function convertWithMagick(
   file: File,
   target: Dimensions | null,
   format: OutputFormat,

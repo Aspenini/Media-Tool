@@ -1,23 +1,15 @@
-import Button from '@mui/material/Button';
+import Button, { type ButtonProps } from '@mui/material/Button';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 
-interface DownloadButtonProps {
+interface DownloadButtonProps extends Omit<ButtonProps<'a'>, 'component' | 'href'> {
   href: string;
   download: string;
   label?: string;
-  disabled?: boolean;
 }
 
-export function DownloadButton({ href, download, label = 'Download', disabled }: DownloadButtonProps) {
+export function DownloadButton({ href, download, label = 'Download', ...rest }: DownloadButtonProps) {
   return (
-    <Button
-      component="a"
-      href={href}
-      download={download}
-      disabled={disabled}
-      startIcon={<DownloadRoundedIcon />}
-      sx={{ alignSelf: 'flex-start' }}
-    >
+    <Button component="a" href={href} download={download} startIcon={<DownloadRoundedIcon />} {...rest}>
       {label}
     </Button>
   );

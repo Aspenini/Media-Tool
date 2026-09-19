@@ -1,110 +1,111 @@
-import { useMemo, useState } from 'react';
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
-import Tabs from '@mui/material/Tabs';
-import Tab from '@mui/material/Tab';
-import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
-import Tooltip from '@mui/material/Tooltip';
-import Link from '@mui/material/Link';
-import Divider from '@mui/material/Divider';
-import { ThemeProvider } from '@mui/material/styles';
+import CircularProgress from '@mui/material/CircularProgress';
 import CssBaseline from '@mui/material/CssBaseline';
-import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
-import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded';
-import GitHubIcon from '@mui/icons-material/GitHub';
-import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
-import { getTheme, type ThemeMode } from './theme';
+import ScopedCssBaseline from '@mui/material/ScopedCssBaseline';
+import { ThemeProvider } from '@mui/material/styles';
+import { APP_ACCENT, getTheme, type ThemeMode } from './theme';
 import { NotificationProvider } from './components/NotificationProvider';
-import { AnimatedTabPanel } from './components/AnimatedTabPanel';
-import { useHashTab } from './hooks/useHashTab';
-import { TOOLS, TOOL_HASHES } from './toolRegistry';
+import { ToolProvider } from './components/Workbench';
+import { AppTabs } from './components/AppTabs';
+import { useHashRoute } from './hooks/useHashRoute';
+import { TOOLS, toolByHash, type ToolDef } from './toolRegistry';
 
 const STORAGE_KEY = 'media-tool-theme';
 
 function initialMode(): ThemeMode {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === 'light' || stored === 'dark') return stored;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch {
+    /* storage unavailable */
+  }
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
 export function App() {
-  const [mode, setMode] = useState<ThemeMode>(initialMode);
-  const [active, setActive] = useHashTab(TOOL_HASHES);
-  const theme = useMemo(() => getTheme(mode), [mode]);
+  const [preferredMode, setPreferredMode] = useState<ThemeMode>(initialMode);
+  const [hash, select] = useHashRoute();
+  // Unknown or empty hashes open the first tab, as the original app did.
+  const tool = toolByHash(hash) ?? TOOLS[0];
+
+  // Two themes: the app bar always follows the user's preference and the app accent;
+  // each tool styles only its own workspace (accent, forced mode, font).
+  const appTheme = useMemo(() => getTheme({ mode: preferredMode, accent: APP_ACCENT }), [preferredMode]);
+  const toolTheme = useMemo(
+    () => getTheme({ mode: tool.forceMode ?? preferredMode, accent: tool.accent, bodyFont: tool.bodyFont }),
+    [preferredMode, tool],
+  );
+
+  useEffect(() => {
+    document.title = `${tool.name} · Aspenini Media Tool`;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', appTheme.palette.background.paper);
+  }, [tool, appTheme]);
+
+  useEffect(() => {
+    // A file dropped outside any drop zone would otherwise navigate away from the app.
+    const swallowDrop = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    window.addEventListener('dragover', swallowDrop);
+    window.addEventListener('drop', swallowDrop);
+    return () => {
+      window.removeEventListener('dragover', swallowDrop);
+      window.removeEventListener('drop', swallowDrop);
+    };
+  }, []);
 
   const toggleMode = () => {
-    setMode((prev) => {
+    setPreferredMode((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark';
-      localStorage.setItem(STORAGE_KEY, next);
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        /* storage unavailable */
+      }
       return next;
     });
   };
 
-  const activeTool = TOOLS[active] ?? TOOLS[0];
-  const ActiveComponent = activeTool.Component;
+  const selectTool = useCallback((next: ToolDef) => select(next.hash), [select]);
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <ThemeProvider theme={appTheme}>
+      <CssBaseline enableColorScheme />
       <NotificationProvider>
-        <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
-          <AppBar
-            position="sticky"
-            color="default"
-            elevation={0}
-            sx={{ backdropFilter: 'blur(12px)', backgroundColor: 'rgba(var(--mui-palette-background-defaultChannel) / 0.78)', borderBottom: '1px solid', borderColor: 'divider' }}
-          >
-            <Toolbar sx={{ gap: 1.5 }}>
-              <AutoAwesomeRoundedIcon color="primary" />
-              <Typography variant="h6" component="h1" sx={{ fontWeight: 700, flexGrow: 1 }}>
-                Aspenini Media Tool
-              </Typography>
-              <Tooltip title="View on GitHub">
-                <IconButton component="a" href="https://github.com/Aspenini/Media-Tool" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">
-                  <GitHubIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-                <IconButton onClick={toggleMode} aria-label="Toggle color mode" color="primary">
-                  {mode === 'dark' ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
-                </IconButton>
-              </Tooltip>
-            </Toolbar>
-            <Tabs
-              value={active}
-              onChange={(_, value: number) => setActive(value)}
-              variant="scrollable"
-              scrollButtons="auto"
-              allowScrollButtonsMobile
-              sx={{ px: { xs: 1, sm: 2 }, borderTop: '1px solid', borderColor: 'divider' }}
+        <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <AppTabs active={tool} onSelect={selectTool} mode={preferredMode} onToggleMode={toggleMode} />
+          <ThemeProvider theme={toolTheme}>
+            <ScopedCssBaseline
+              enableColorScheme
+              component={motion.main}
+              key={tool.id}
+              id="tool-panel"
+              role="tabpanel"
+              aria-labelledby={`tab-${tool.id}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
             >
-              {TOOLS.map((tool) => (
-                <Tab key={tool.id} icon={tool.icon} iconPosition="start" label={tool.label} sx={{ minHeight: 56 }} />
-              ))}
-            </Tabs>
-          </AppBar>
-
-          <Container maxWidth="xl" sx={{ flexGrow: 1, py: { xs: 3, md: 4 }, px: { xs: 2, md: 4 } }}>
-            <AnimatedTabPanel panelKey={activeTool.id}>
-              <ActiveComponent />
-            </AnimatedTabPanel>
-          </Container>
-
-          <Divider />
-          <Box component="footer" sx={{ py: 2.5, textAlign: 'center' }}>
-            <Link href="https://github.com/Aspenini/Media-Tool" target="_blank" rel="noopener noreferrer" underline="hover" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
-              <GitHubIcon fontSize="small" />
-              <Typography variant="body2">View on GitHub</Typography>
-            </Link>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-              All processing happens locally in your browser — no uploads.
-            </Typography>
-          </Box>
+              <ToolProvider value={tool}>
+                <Suspense fallback={<ToolLoading />}>
+                  <tool.Component />
+                </Suspense>
+              </ToolProvider>
+            </ScopedCssBaseline>
+          </ThemeProvider>
         </Box>
       </NotificationProvider>
     </ThemeProvider>
+  );
+}
+
+function ToolLoading() {
+  return (
+    <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+      <CircularProgress size={28} />
+    </Box>
   );
 }
