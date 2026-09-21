@@ -15,13 +15,16 @@ import MovieRoundedIcon from '@mui/icons-material/MovieRounded';
 import PanoramaPhotosphereRoundedIcon from '@mui/icons-material/PanoramaPhotosphereRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import PhotoSizeSelectLargeRoundedIcon from '@mui/icons-material/PhotoSizeSelectLargeRounded';
+import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded';
+import MovieFilterRoundedIcon from '@mui/icons-material/MovieFilterRounded';
 import SentimentVerySatisfiedRoundedIcon from '@mui/icons-material/SentimentVerySatisfiedRounded';
 import type { ThemeMode } from './theme';
 
-export type CategoryId = 'image' | 'audio' | 'make' | 'inspect';
+export type CategoryId = 'image' | 'video' | 'audio' | 'make' | 'inspect';
 
 export const CATEGORIES: { id: CategoryId; label: string; blurb: string }[] = [
   { id: 'image', label: 'Image', blurb: 'Scale, convert, recolor and recut pictures.' },
+  { id: 'video', label: 'Video', blurb: 'Cut clips down to the part you want.' },
   { id: 'audio', label: 'Audio', blurb: 'Synthesize, degrade and move sound through space.' },
   { id: 'make', label: 'Make', blurb: 'Turn text and data into codes, tables and videos.' },
   { id: 'inspect', label: 'Inspect', blurb: 'Look inside panoramas, vectors and esoteric code.' },
@@ -31,6 +34,8 @@ export interface ToolDef {
   id: string;
   /** Deep-link hash — kept identical to the original app so old links still work. */
   hash: string;
+  /** Older hashes that still open this tool. */
+  aliases?: readonly string[];
   name: string;
   /** A few words, shown as the tab tooltip. */
   tagline: string;
@@ -67,15 +72,28 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'imageResize',
-    hash: 'resize-convert',
-    name: 'Resize & Convert',
-    tagline: 'Any size, any format',
-    description: 'Resize to exact dimensions and convert between PNG, JPEG, WebP, AVIF, TIFF, BMP and GIF. Exotic formats load ImageMagick on demand.',
+    hash: 'resize',
+    aliases: ['resize-convert'],
+    name: 'Resize',
+    tagline: 'Any size, optional format',
+    description: 'Resize to exact dimensions. Keep the original format, or save the resized image as PNG, JPEG, WebP, AVIF, TIFF, BMP or GIF.',
     category: 'image',
     icon: PhotoSizeSelectLargeRoundedIcon,
     accent: '#16b8a6',
     accepts: ['image'],
     Component: load(() => import('./tools/ImageResize'), 'ImageResize'),
+  },
+  {
+    id: 'imageConvert',
+    hash: 'convert',
+    name: 'Convert',
+    tagline: 'Change format, keep size',
+    description: 'Convert images between PNG, JPEG, WebP, AVIF, TIFF, BMP and GIF without resizing. Exotic formats load ImageMagick on demand — the same engine Resize uses.',
+    category: 'image',
+    icon: SyncAltRoundedIcon,
+    accent: '#5b8def',
+    accepts: ['image'],
+    Component: load(() => import('./tools/ImageConvert'), 'ImageConvert'),
   },
   {
     id: 'pixelSnap',
@@ -112,6 +130,18 @@ export const TOOLS: ToolDef[] = [
     accent: '#b06cff',
     accepts: ['image'],
     Component: load(() => import('./tools/Palette'), 'Palette'),
+  },
+  {
+    id: 'videoTrim',
+    hash: 'video-trim',
+    name: 'Video Trimmer',
+    tagline: 'Cut a clip to in and out points',
+    description: 'Set in and out points on a video and export just that slice. Runs in your browser — the clip is re-encoded as WebM or MP4.',
+    category: 'video',
+    icon: MovieFilterRoundedIcon,
+    accent: '#ff5c7a',
+    accepts: ['video'],
+    Component: load(() => import('./tools/VideoTrim'), 'VideoTrim'),
   },
   {
     id: 'audio',
@@ -249,5 +279,6 @@ export const TOOLS: ToolDef[] = [
 ];
 
 export function toolByHash(hash: string): ToolDef | null {
-  return TOOLS.find((t) => t.hash === hash) ?? null;
+  const key = hash.toLowerCase();
+  return TOOLS.find((t) => t.hash === key || t.aliases?.includes(key)) ?? null;
 }

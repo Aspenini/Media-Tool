@@ -471,6 +471,9 @@ export function ImageResize() {
                   </MenuItem>
                 ))}
               </TextField>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+                Keep the original format, or pick another. Format-only conversion lives in Convert.
+              </Typography>
               {needsMagick && (
                 <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
                   About 5 MB downloads the first time you export this format.
