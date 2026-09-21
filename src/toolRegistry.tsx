@@ -166,7 +166,7 @@ export const TOOLS: ToolDef[] = [
     hash: 'meme-maker',
     name: 'Meme Maker',
     tagline: 'Captions with icons in the words',
-    description: 'Caption a photo or clip — on the media or in a bar above it — with little icons tucked right into the words. Export PNG or video.',
+    description: 'Caption a photo or clip — on the media or in a bar above it — with little icons tucked right into the words. Export PNG, GIF, or video.',
     category: 'make',
     icon: SentimentVerySatisfiedRoundedIcon,
     accent: '#f5b82e',

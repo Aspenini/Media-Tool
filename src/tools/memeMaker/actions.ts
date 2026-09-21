@@ -3,6 +3,7 @@ import sampleUrl from '../../assets/meme-sample.jpg';
 import { assetUrl } from '../../lib/assetUrl';
 import type { NotificationType } from '../../components/NotificationProvider';
 import { canvasToPng, copyPng, downloadBlob, extensionFor, recordVideo } from '../../lib/meme/export.ts';
+import { canvasToGif, GIF_MAX_DURATION, recordGif } from '../../lib/meme/gif.ts';
 import { baseName, loadIconFile, loadMediaFile, loadMediaUrl } from '../../lib/meme/media.ts';
 import type { IconAtlas, MediaAsset } from '../../lib/meme/types.ts';
 import type { EditorAction, EditorState } from './editor';
@@ -19,6 +20,7 @@ export interface EditorActions {
   openSample(): Promise<void>;
   addIconFile(file: File): Promise<void>;
   exportMedia(): Promise<void>;
+  exportGif(): Promise<void>;
   copyImage(): Promise<void>;
   cancelExport(): void;
 }
@@ -39,7 +41,7 @@ export function useEditorActions(options: {
 
   const load = useCallback(
     async (task: () => Promise<MediaAsset>, failure: string) => {
-      if (stateRef.current.exportProgress !== null) return;
+      if (stateRef.current.exporting) return;
       setLoading(true);
       try {
         setMedia(await task());
@@ -70,9 +72,9 @@ export function useEditorActions(options: {
   );
 
   const exportMedia = useCallback(async () => {
-    const { media, exportProgress } = stateRef.current;
+    const { media, exporting } = stateRef.current;
     const canvas = canvasRef.current;
-    if (!media || !canvas || exportProgress !== null) return;
+    if (!media || !canvas || exporting) return;
     const name = `${baseName(media.name)}-meme`;
 
     if (media.kind === 'image') {
@@ -87,13 +89,13 @@ export function useEditorActions(options: {
 
     const controller = new AbortController();
     abortRef.current = controller;
-    dispatch({ type: 'exportProgress', value: 0 });
+    dispatch({ type: 'exporting', exporting: { kind: 'video', progress: 0 } });
     try {
       const blob = await recordVideo({
         canvas,
         video: media.source as HTMLVideoElement,
         signal: controller.signal,
-        onProgress: (value) => dispatch({ type: 'exportProgress', value }),
+        onProgress: (value) => dispatch({ type: 'exporting', exporting: { kind: 'video', progress: value } }),
       });
       if (blob) {
         downloadBlob(blob, `${name}.${extensionFor(blob)}`);
@@ -105,7 +107,57 @@ export function useEditorActions(options: {
       notify(message(error, 'Recording failed.'), 'error');
     } finally {
       abortRef.current = null;
-      dispatch({ type: 'exportProgress', value: null });
+      dispatch({ type: 'exporting', exporting: null });
+    }
+  }, [stateRef, canvasRef, dispatch, notify]);
+
+  const exportGif = useCallback(async () => {
+    const { media, placement, captions, offsets, styles, exporting } = stateRef.current;
+    const canvas = canvasRef.current;
+    if (!media || !canvas || exporting) return;
+    const name = `${baseName(media.name)}-meme`;
+
+    if (media.kind === 'image') {
+      dispatch({ type: 'exporting', exporting: { kind: 'gif', progress: 0 } });
+      try {
+        downloadBlob(await canvasToGif(canvas), `${name}.gif`);
+        notify('GIF saved', 'success');
+      } catch (error) {
+        notify(message(error, 'GIF export failed.'), 'error');
+      } finally {
+        dispatch({ type: 'exporting', exporting: null });
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    dispatch({ type: 'exporting', exporting: { kind: 'gif', progress: 0 } });
+    try {
+      const result = await recordGif({
+        scene: {
+          media,
+          placement,
+          captions,
+          offsets,
+          style: styles[placement],
+          icons: atlasRef.current,
+        },
+        video: media.source as HTMLVideoElement,
+        signal: controller.signal,
+        onProgress: (progress) => dispatch({ type: 'exporting', exporting: { kind: 'gif', progress } }),
+      });
+      if (result) {
+        downloadBlob(result.blob, `${name}.gif`);
+        notify(result.truncated ? `GIF saved (first ${GIF_MAX_DURATION} seconds)` : 'GIF saved', 'success');
+      } else {
+        notify('Export cancelled');
+      }
+    } catch (error) {
+      notify(message(error, 'GIF export failed.'), 'error');
+    } finally {
+      abortRef.current = null;
+      dispatch({ type: 'exporting', exporting: null });
     }
   }, [stateRef, canvasRef, dispatch, notify]);
 
@@ -122,5 +174,5 @@ export function useEditorActions(options: {
 
   const cancelExport = useCallback(() => abortRef.current?.abort(), []);
 
-  return { loading, openFile, openSample, addIconFile, exportMedia, copyImage, cancelExport };
+  return { loading, openFile, openSample, addIconFile, exportMedia, exportGif, copyImage, cancelExport };
 }

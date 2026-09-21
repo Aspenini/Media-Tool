@@ -16,6 +16,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import GifBoxRoundedIcon from '@mui/icons-material/GifBoxRounded';
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded';
 import FormatAlignCenterRoundedIcon from '@mui/icons-material/FormatAlignCenterRounded';
 import FormatAlignLeftRoundedIcon from '@mui/icons-material/FormatAlignLeftRounded';
@@ -113,8 +114,10 @@ function useShortcuts() {
  * ------------------------------------------------------------------ */
 
 function Controls() {
-  const { state, busy, exportMedia, copyImage, openFile } = useEditor();
+  const { state, busy, exportMedia, exportGif, copyImage, openFile } = useEditor();
   const media = state.media;
+  const gifBusy = state.exporting?.kind === 'gif';
+  const videoBusy = state.exporting?.kind === 'video';
 
   return (
     <Panel
@@ -123,10 +126,10 @@ function Controls() {
           primary={{
             label: media?.kind === 'video' ? 'Export video' : 'Export PNG',
             icon: <DownloadRoundedIcon />,
-            busy,
+            busy: videoBusy,
             busyLabel: 'Recording…',
             onClick: () => void exportMedia(),
-            disabled: !media,
+            disabled: !media || busy,
             title: `${MOD}+S`,
           }}
           aside={
@@ -141,6 +144,17 @@ function Controls() {
               </Tooltip>
             )
           }
+          secondary={
+            media && {
+              label: 'Export GIF',
+              icon: <GifBoxRoundedIcon />,
+              busy: gifBusy,
+              busyLabel: 'Encoding…',
+              onClick: () => void exportGif(),
+              disabled: busy,
+            }
+          }
+          status={media?.kind === 'video' ? 'GIFs are 10 fps, up to 10 seconds, scaled to 480px and dithered.' : undefined}
         />
         }
     >
@@ -429,7 +443,7 @@ function Preview() {
           })}
         </Box>
       )}
-      {state.exportProgress !== null && <RecordingOverlay progress={state.exportProgress} />}
+      {state.exporting && media.kind === 'video' && <ExportOverlay kind={state.exporting.kind} progress={state.exporting.progress} />}
       {loading && (
         <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
           <CircularProgress />
@@ -543,8 +557,9 @@ function CaptionHandle({
   );
 }
 
-function RecordingOverlay({ progress }: { progress: number }) {
+function ExportOverlay({ kind, progress }: { kind: 'video' | 'gif'; progress: number }) {
   const { cancelExport } = useEditor();
+  const gif = kind === 'gif';
   return (
     <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', bgcolor: 'rgba(0,0,0,0.45)', borderRadius: 1.5, lineHeight: 1.5 }}>
       <Paper sx={{ p: 2.5, width: 'min(320px, 90%)', borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -554,17 +569,17 @@ function RecordingOverlay({ progress }: { progress: number }) {
               width: 10,
               height: 10,
               borderRadius: '50%',
-              bgcolor: 'error.main',
+              bgcolor: gif ? 'primary.main' : 'error.main',
               animation: 'meme-rec 1.2s ease-in-out infinite',
               '@keyframes meme-rec': { '50%': { opacity: 0.3 } },
             }}
           />
-          <Typography sx={{ fontWeight: 700, flex: 1 }}>Recording</Typography>
+          <Typography sx={{ fontWeight: 700, flex: 1 }}>{gif ? 'Encoding GIF' : 'Recording'}</Typography>
           <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.85rem' }}>{Math.round(progress * 100)}%</Typography>
         </Box>
         <LinearProgress variant="determinate" value={progress * 100} aria-label="Export progress" />
         <Typography variant="body2" color="text.secondary">
-          The clip plays through once in real time. Keep this tab in front.
+          {gif ? 'Sampling frames at a shareable size. Stay on this tab.' : 'The clip plays through once in real time. Keep this tab in front.'}
         </Typography>
         <Button variant="outlined" size="small" onClick={cancelExport} sx={{ alignSelf: 'flex-start' }}>
           Cancel

@@ -27,8 +27,8 @@ export interface EditorState {
   /** Each placement keeps its own look, so flipping between them never clobbers edits. */
   styles: Record<Placement, TextStyle>;
   customIcons: InlineIcon[];
-  /** Non-null while a video export is recording. */
-  exportProgress: number | null;
+  /** Non-null while a video is recording or a GIF is encoding. */
+  exporting: { kind: 'video' | 'gif'; progress: number } | null;
 }
 
 export type EditorAction =
@@ -41,7 +41,7 @@ export type EditorAction =
   | { type: 'resetStyle' }
   | { type: 'addIcon'; icon: InlineIcon }
   | { type: 'removeIcon'; id: string }
-  | { type: 'exportProgress'; value: number | null };
+  | { type: 'exporting'; exporting: EditorState['exporting'] };
 
 export const DEFAULT_OFFSETS: Record<CaptionSlot, number> = { top: 0.04, bottom: 0.96 };
 
@@ -73,7 +73,7 @@ const DEFAULT_STATE: EditorState = {
   offsets: DEFAULT_OFFSETS,
   styles: DEFAULT_STYLES,
   customIcons: [],
-  exportProgress: null,
+  exporting: null,
 };
 
 function reducer(state: EditorState, action: EditorAction): EditorState {
@@ -99,8 +99,8 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
       return { ...state, customIcons: [...state.customIcons, action.icon] };
     case 'removeIcon':
       return { ...state, customIcons: state.customIcons.filter((icon) => icon.id !== action.id) };
-    case 'exportProgress':
-      return { ...state, exportProgress: action.value };
+    case 'exporting':
+      return { ...state, exporting: action.exporting };
   }
 }
 
@@ -288,7 +288,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     icons,
     atlas,
     fontsVersion,
-    busy: state.exportProgress !== null,
+    busy: state.exporting !== null,
     canvasRef,
     fieldRefs: { top: topRef, bottom: bottomRef },
     setMedia,

@@ -24,7 +24,7 @@ Built with **React + TypeScript + Material UI**, bundled and served by **Bun**. 
 - **Credits Crawl**: Build an end-credits scroll and export it as a WebM video.
 - **360° Image Viewer**: View equirectangular, cylindrical, or cube-map panoramas (powered by three.js).
 - **SVG Dissect**: Inspect an SVG's layer tree, identify and select shapes, drag elements independently, and reset their positions.
-- **Meme Maker**: Caption a photo or clip — on the media or in a bar above it — with little icons tucked into the words. Exports PNG, or WebM/MP4 with audio.
+- **Meme Maker**: Caption a photo or clip — on the media or in a bar above it — with little icons tucked into the words. Exports PNG, a shareable GIF (dithered; video is scaled down), or WebM/MP4 with audio.
 - **Modern UI**: Material UI with light/dark mode and a tab per tool. Each tool has its own accent colour, and its settings are remembered between visits.
 - **Works together**: hand a result straight to another tool with *Open in…*, or paste a file into whichever tool is open.
 - **Installable and offline**: a service worker caches the app after the first visit, so it keeps working with no connection.
