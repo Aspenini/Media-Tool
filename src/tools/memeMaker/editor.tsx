@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 import { useNotification } from '../../components/NotificationProvider';
+import { disposeAudio, type AudioTrack } from '../../lib/meme/audio.ts';
 import { preloadFonts } from '../../lib/meme/fonts.ts';
 import { BUILTIN_ICONS, loadSvgImage } from '../../lib/meme/icons.ts';
 import { disposeMedia } from '../../lib/meme/media.ts';
@@ -28,6 +29,22 @@ export interface EditorState {
   speed: number;
   /** Keep the audio's pitch when the speed isn't 1×. Reset with the media. */
   keepPitch: boolean;
+  /** Soundtrack laid over a video. Survives swapping the clip. Not persisted. */
+  audio: AudioTrack | null;
+  /** In/out on the soundtrack; null for the whole file. */
+  audioTrim: Trim | null;
+  /** Soundtrack playback rate, independent of the clip's speed. */
+  audioSpeed: number;
+  /** Keep the soundtrack's pitch when audioSpeed isn't 1×. */
+  audioKeepPitch: boolean;
+  /** Soundtrack gain, 0–1. */
+  audioVolume: number;
+  /** Mute the clip's own audio while a soundtrack is attached. */
+  replaceAudio: boolean;
+  /** Fake-4K grade: sharper, more saturated, and (on video) smoother. */
+  goldfish: boolean;
+  /** User mute for the preview. Starts muted so a clip can autoplay. */
+  previewMuted: boolean;
   placement: Placement;
   captions: Record<CaptionSlot, string>;
   /** Top: fraction of media height at the caption's top edge. Bottom: at its bottom edge. */
@@ -45,6 +62,14 @@ export type EditorAction =
   | { type: 'trim'; trim: Trim | null }
   | { type: 'speed'; speed: number }
   | { type: 'keepPitch'; keepPitch: boolean }
+  | { type: 'audio'; audio: AudioTrack | null }
+  | { type: 'audioTrim'; trim: Trim | null }
+  | { type: 'audioSpeed'; speed: number }
+  | { type: 'audioKeepPitch'; keepPitch: boolean }
+  | { type: 'audioVolume'; volume: number }
+  | { type: 'replaceAudio'; replaceAudio: boolean }
+  | { type: 'goldfish'; goldfish: boolean }
+  | { type: 'previewMuted'; previewMuted: boolean }
   | { type: 'placement'; placement: Placement }
   | { type: 'caption'; slot: CaptionSlot; text: string }
   | { type: 'offset'; slot: CaptionSlot; value: number }
@@ -94,6 +119,14 @@ const DEFAULT_STATE: EditorState = {
   trim: null,
   speed: 1,
   keepPitch: true,
+  audio: null,
+  audioTrim: null,
+  audioSpeed: 1,
+  audioKeepPitch: true,
+  audioVolume: 1,
+  replaceAudio: true,
+  goldfish: false,
+  previewMuted: true,
   placement: 'overlay',
   captions: { top: 'When the :star: finally\nspawns', bottom: 'and you still miss it' },
   offsets: DEFAULT_OFFSETS,
@@ -101,6 +134,16 @@ const DEFAULT_STATE: EditorState = {
   customIcons: [],
   exporting: null,
 };
+
+function clampUnit(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
+}
+
+function clampAudioSpeed(speed: number): number {
+  if (!Number.isFinite(speed)) return 1;
+  return Math.min(3, Math.max(0.25, speed));
+}
 
 function reducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
@@ -114,6 +157,33 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
       return { ...state, speed: action.speed };
     case 'keepPitch':
       return { ...state, keepPitch: action.keepPitch };
+    case 'audio': {
+      const had = state.audio !== null;
+      const has = action.audio !== null;
+      return {
+        ...state,
+        audio: action.audio,
+        audioTrim: null,
+        audioSpeed: 1,
+        audioKeepPitch: true,
+        audioVolume: has && had ? state.audioVolume : 1,
+        replaceAudio: has && had ? state.replaceAudio : true,
+      };
+    }
+    case 'audioTrim':
+      return { ...state, audioTrim: action.trim };
+    case 'audioSpeed':
+      return { ...state, audioSpeed: clampAudioSpeed(action.speed) };
+    case 'audioKeepPitch':
+      return { ...state, audioKeepPitch: action.keepPitch };
+    case 'audioVolume':
+      return { ...state, audioVolume: clampUnit(action.volume, 1) };
+    case 'replaceAudio':
+      return { ...state, replaceAudio: action.replaceAudio };
+    case 'goldfish':
+      return { ...state, goldfish: action.goldfish };
+    case 'previewMuted':
+      return { ...state, previewMuted: action.previewMuted };
     case 'placement':
       return { ...state, placement: action.placement };
     case 'caption':
@@ -142,7 +212,7 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
 
 const STORAGE_KEY = 'media-tool:meme-maker:v2';
 
-type Persisted = Pick<EditorState, 'placement' | 'captions' | 'offsets' | 'styles'>;
+type Persisted = Pick<EditorState, 'placement' | 'captions' | 'offsets' | 'styles' | 'goldfish'>;
 
 function loadPersisted(): EditorState {
   try {
@@ -158,6 +228,7 @@ function loadPersisted(): EditorState {
         overlay: { ...DEFAULT_STYLES.overlay, ...saved.styles?.overlay },
         bar: { ...DEFAULT_STYLES.bar, ...saved.styles?.bar },
       },
+      goldfish: saved.goldfish === true,
     };
   } catch {
     return DEFAULT_STATE;
@@ -165,18 +236,18 @@ function loadPersisted(): EditorState {
 }
 
 function usePersist(state: EditorState): void {
-  const { placement, captions, offsets, styles } = state;
+  const { placement, captions, offsets, styles, goldfish } = state;
   useEffect(() => {
     const id = setTimeout(() => {
       try {
-        const data: Persisted = { placement, captions, offsets, styles };
+        const data: Persisted = { placement, captions, offsets, styles, goldfish };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       } catch {
         // Storage can be full or blocked (private mode); persistence is best-effort.
       }
     }, 300);
     return () => clearTimeout(id);
-  }, [placement, captions, offsets, styles]);
+  }, [placement, captions, offsets, styles, goldfish]);
 }
 
 /* ---------- context ---------- */
@@ -270,8 +341,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   // Release the media and custom icons when the tool is closed.
   useEffect(
     () => () => {
-      const { media, customIcons } = stateRef.current;
+      const { media, customIcons, audio } = stateRef.current;
       if (media) disposeMedia(media);
+      if (audio) disposeAudio(audio);
       customIcons.forEach((icon) => icon.src.startsWith('blob:') && URL.revokeObjectURL(icon.src));
     },
     [],

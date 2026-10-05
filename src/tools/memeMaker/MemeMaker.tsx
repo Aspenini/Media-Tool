@@ -30,26 +30,30 @@ import SentimentVerySatisfiedRoundedIcon from '@mui/icons-material/SentimentVery
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import VolumeOffRoundedIcon from '@mui/icons-material/VolumeOffRounded';
 import VolumeUpRoundedIcon from '@mui/icons-material/VolumeUpRounded';
+import AudiotrackRoundedIcon from '@mui/icons-material/AudiotrackRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import CropRoundedIcon from '@mui/icons-material/CropRounded';
+import HighQualityRoundedIcon from '@mui/icons-material/HighQualityRounded';
 import { useIncomingFiles } from '../../components/FileBridge';
 import { FileButton, FileDropZone } from '../../components/FileDropZone';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../../components/Workbench';
 import { ExportFooter } from '../../components/ExportFooter';
 import { ChoiceCard, ColorField, Segmented, SliderField, SwitchRow, type SegmentOption } from '../../components/controls';
 import { TrimTimeline } from '../../components/TrimTimeline';
+import { audioSpan, outputDuration, soundtrackSync } from '../../lib/meme/audio.ts';
 import { cropPixels, dragCrop, fitAspect, FULL_CROP, isFullCrop, type CropHandle } from '../../lib/meme/crop.ts';
 import { trimSpan } from '../../lib/meme/media.ts';
 import { clampRange, formatTimecode } from '../../lib/videoTrim';
 import { canCopyImage } from '../../lib/meme/export.ts';
 import { FONTS } from '../../lib/meme/fonts.ts';
 import { renderScene, sameFrame, type Frame, type Scene } from '../../lib/meme/render.ts';
-import type { CaptionSlot, Placement, Rect, TextAlign, TextStyle } from '../../lib/meme/types.ts';
+import type { CaptionSlot, Placement, Rect, TextAlign, TextStyle, Trim } from '../../lib/meme/types.ts';
 import { MONO_FONT } from '../../theme';
 import { cropRatio, DEFAULT_OFFSETS, EditorProvider, useEditor, type CropAspect } from './editor';
 
 const MEDIA_ACCEPT = 'image/*,video/*';
+const AUDIO_ACCEPT = 'audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus,.weba';
 const SNAP = 0.015;
 const FILL_PRESETS = ['#ffffff', '#111111', '#ffd23f', '#ff4d6d', '#4dd8ff', '#7cff6b'];
 const STROKE_PRESETS = ['#000000', '#ffffff', '#5a2d00', '#2a1459', '#b0123a', '#0b4a6f'];
@@ -86,6 +90,7 @@ function Studio() {
   useShortcuts();
   useTrimLoop();
   usePlaybackSpeed();
+  useSoundtrack();
   const { state, busy, openFile } = useEditor();
   return (
     <Workbench panelWidth={360}>
@@ -187,16 +192,95 @@ function usePlaybackSpeed() {
   }, [media, speed, keepPitch]);
 }
 
-function useVideoTime(video: HTMLVideoElement | null): number {
+/**
+ * Play the added soundtrack in step with the clip, and honor the preview mute.
+ * Export takes the elements over while `busy` is set, so this steps aside then.
+ */
+function useSoundtrack() {
+  const { state, busy } = useEditor();
+  const { media, audio, replaceAudio, previewMuted } = state;
+  const params = useRef(state);
+  params.current = state;
+
+  useEffect(() => {
+    const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+    if (!video || busy) return;
+    video.muted = previewMuted || Boolean(audio && replaceAudio);
+  }, [media, audio, replaceAudio, previewMuted, busy]);
+
+  useEffect(() => {
+    const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+    const sound = audio?.element;
+    if (!media || !video || !sound || busy) return;
+
+    sound.loop = false;
+    let appliedSpeed = Number.NaN;
+    let appliedPitch = sound.preservesPitch;
+    let raf = 0;
+    let lastVideoTime = video.currentTime;
+    let nextPlay = 0;
+
+    const tick = () => {
+      const current = params.current;
+      const track = current.audio;
+      if (!track || track.element !== sound) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      if (appliedSpeed !== current.audioSpeed) {
+        sound.playbackRate = current.audioSpeed;
+        sound.preservesPitch = current.audioKeepPitch;
+        appliedSpeed = current.audioSpeed;
+        appliedPitch = current.audioKeepPitch;
+      } else if (appliedPitch !== current.audioKeepPitch) {
+        sound.preservesPitch = current.audioKeepPitch;
+        appliedPitch = current.audioKeepPitch;
+      }
+      if (sound.volume !== current.audioVolume) sound.volume = current.audioVolume;
+      if (sound.muted !== current.previewMuted) sound.muted = current.previewMuted;
+
+      const moved = Math.abs(video.currentTime - lastVideoTime) > 0.0005;
+      lastVideoTime = video.currentTime;
+      const vSpan = current.media?.kind === 'video' ? trimSpan(current.media, current.trim) : trimSpan(media, current.trim);
+      const aSpan = audioSpan(track.duration, current.audioTrim);
+      const sync = soundtrackSync({
+        videoPaused: video.paused || video.seeking,
+        videoMoved: moved,
+        videoTime: video.currentTime,
+        videoStart: vSpan?.start ?? 0,
+        videoSpeed: current.speed,
+        audioTime: sound.currentTime,
+        audioStart: aSpan.start,
+        audioEnd: aSpan.end,
+        audioSpeed: current.audioSpeed,
+      });
+      if (sync.seek !== null && !sound.seeking) sound.currentTime = sync.seek;
+      if (sync.pause) {
+        if (!sound.paused) sound.pause();
+      } else if (sound.paused && performance.now() >= nextPlay) {
+        nextPlay = performance.now() + 400;
+        void sound.play().catch(() => undefined);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      sound.pause();
+    };
+  }, [media, audio, busy]);
+}
+
+function useVideoTime(media: HTMLMediaElement | null): number {
   const [time, setTime] = useState(0);
   useEffect(() => {
-    if (!video) return;
+    if (!media) return;
     let handle = requestAnimationFrame(function tick() {
-      setTime(video.currentTime);
+      setTime(media.currentTime);
       handle = requestAnimationFrame(tick);
     });
     return () => cancelAnimationFrame(handle);
-  }, [video]);
+  }, [media]);
   return time;
 }
 
@@ -263,6 +347,8 @@ function Controls() {
         {media && <CropSection />}
         {media?.kind === 'video' && <TrimSection />}
         {media?.kind === 'video' && <SpeedSection />}
+        {media?.kind === 'video' && <SoundtrackSection />}
+        {media && <GoldfishSection />}
         <CaptionSection />
         <IconSection />
         <StyleSection />
@@ -344,6 +430,7 @@ function TrimSection() {
         start={span.start}
         end={span.end}
         disabled={busy}
+        label="Clip trim"
         onSeek={seek}
         onChangeRange={(start, end) => {
           const next = clampRange(start, end, media.duration);
@@ -379,6 +466,198 @@ function SpeedSection() {
       {speed !== 1 && (
         <SwitchRow label="Keep audio pitch" checked={keepPitch} onChange={(next) => dispatch({ type: 'keepPitch', keepPitch: next })} />
       )}
+    </PanelSection>
+  );
+}
+
+function SoundtrackTimeline({
+  element,
+  duration,
+  trim,
+  speed,
+  videoHeard,
+  busy,
+  onScrub,
+  onChangeRange,
+}: {
+  element: HTMLAudioElement;
+  duration: number;
+  trim: Trim | null;
+  speed: number;
+  videoHeard: number | null;
+  busy: boolean;
+  onScrub: () => void;
+  onChangeRange: (start: number, end: number) => void;
+}) {
+  const audioTime = useVideoTime(element);
+  const span = audioSpan(duration, trim);
+  const heard = outputDuration(span.start, span.end, speed);
+  const tail = videoHeard !== null && heard + 0.05 < videoHeard ? videoHeard - heard : 0;
+  const overrun = videoHeard !== null && heard > videoHeard + 0.05 ? heard - videoHeard : 0;
+  const seek = (time: number) => {
+    onScrub();
+    element.currentTime = Math.min(Math.max(0, time), duration);
+  };
+
+  return (
+    <>
+      <TrimTimeline
+        duration={duration}
+        currentTime={audioTime}
+        start={span.start}
+        end={span.end}
+        disabled={busy}
+        label="Soundtrack trim"
+        onSeek={seek}
+        onChangeRange={onChangeRange}
+      />
+      <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.8rem', color: 'text.secondary', mt: -0.5 }}>
+        {formatTimecode(span.start)} → {formatTimecode(span.end)} · {formatTimecode(heard)} heard
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+        {tail > 0
+          ? `Starts with the clip, then silence for the last ${formatTimecode(tail)}.`
+          : overrun > 0
+            ? `Starts with the clip. The last ${formatTimecode(overrun)} sits past the end.`
+            : 'Starts with the clip.'}
+      </Typography>
+    </>
+  );
+}
+
+function SoundtrackSection() {
+  const { state, dispatch, busy, addAudioFile, clearAudio } = useEditor();
+  const { media, audio, audioSpeed, audioKeepPitch, audioVolume, replaceAudio, previewMuted } = state;
+  const element = audio?.element ?? null;
+  if (!media || media.kind !== 'video') return null;
+
+  if (!audio || !element) {
+    return (
+      <PanelSection title="Soundtrack">
+        <FileDropZone
+          accept={AUDIO_ACCEPT}
+          icon={AudiotrackRoundedIcon}
+          title="Add an audio file"
+          hint="MP3, WAV, M4A, OGG or FLAC. Trim it, then speed it up or slow it down."
+          onFiles={(files) => void addAudioFile(files[0])}
+        />
+      </PanelSection>
+    );
+  }
+
+  const span = audioSpan(audio.duration, state.audioTrim);
+  const trimmed = state.audioTrim !== null && (span.start > 0.001 || span.end < audio.duration - 0.001);
+  const videoSpan = trimSpan(media, state.trim);
+  const videoHeard = videoSpan ? outputDuration(videoSpan.start, videoSpan.end, state.speed) : null;
+  const pauseClip = () => {
+    if (media.source instanceof HTMLVideoElement) media.source.pause();
+  };
+
+  return (
+    <PanelSection
+      title="Soundtrack"
+      action={
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {trimmed && (
+            <Button size="small" variant="text" startIcon={<RestartAltRoundedIcon />} onClick={() => dispatch({ type: 'audioTrim', trim: null })}>
+              Reset
+            </Button>
+          )}
+          <Button size="small" variant="text" color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={clearAudio}>
+            Remove
+          </Button>
+        </Box>
+      }
+    >
+      <FileDropZone
+        accept={AUDIO_ACCEPT}
+        icon={AudiotrackRoundedIcon}
+        title={audio.name}
+        hint={`${formatTimecode(audio.duration)} · drop to replace`}
+        onFiles={(files) => void addAudioFile(files[0])}
+      />
+      <SoundtrackTimeline
+        element={element}
+        duration={audio.duration}
+        trim={state.audioTrim}
+        speed={audioSpeed}
+        videoHeard={videoHeard}
+        busy={busy}
+        onScrub={pauseClip}
+        onChangeRange={(start, end) => {
+          const next = clampRange(start, end, audio.duration);
+          pauseClip();
+          element.pause();
+          dispatch({ type: 'audioTrim', trim: next });
+          const edge = Math.abs(next.start - span.start) >= Math.abs(next.end - span.end) ? next.start : next.end;
+          element.currentTime = Math.min(Math.max(0, edge), audio.duration);
+        }}
+      />
+      <SliderField
+        label="Speed"
+        aria-label="Soundtrack speed"
+        value={audioSpeed}
+        min={0.25}
+        max={3}
+        step={0.05}
+        format={(value) => `${value.toFixed(2)}×`}
+        onChange={(next) => dispatch({ type: 'audioSpeed', speed: next })}
+      />
+      {Math.abs(audioSpeed - 1) > 0.001 && (
+        <SwitchRow label="Keep audio pitch" checked={audioKeepPitch} onChange={(next) => dispatch({ type: 'audioKeepPitch', keepPitch: next })} />
+      )}
+      <SliderField
+        label="Volume"
+        aria-label="Soundtrack volume"
+        value={audioVolume}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(value) => `${Math.round(value * 100)}%`}
+        onChange={(next) => dispatch({ type: 'audioVolume', volume: next })}
+      />
+      <SwitchRow
+        label="Replace the clip's audio"
+        hint="Mute the video's own soundtrack."
+        checked={replaceAudio}
+        onChange={(next) => dispatch({ type: 'replaceAudio', replaceAudio: next })}
+      />
+      {previewMuted && (
+        <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+          The preview is muted. Unmute it on the picture to hear this track.
+        </Typography>
+      )}
+    </PanelSection>
+  );
+}
+
+function GoldfishSection() {
+  const { state, dispatch, cropping } = useEditor();
+  const on = state.goldfish;
+  const video = state.media?.kind === 'video';
+  return (
+    <PanelSection title="Look">
+      <Button
+        fullWidth
+        size="large"
+        variant={on ? 'contained' : 'outlined'}
+        startIcon={<HighQualityRoundedIcon />}
+        disabled={cropping}
+        title={cropping ? 'Finish cropping to preview this' : undefined}
+        onClick={() => dispatch({ type: 'goldfish', goldfish: !on })}
+        aria-pressed={on}
+      >
+        Appeal to goldfish
+      </Button>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: -0.75 }}>
+        {on
+          ? video
+            ? 'On — crisper edges, louder color, smoother motion.'
+            : 'On — crisper edges and louder color.'
+          : video
+            ? 'Fake 4K: sharper edges, more vibrant color, smoother motion.'
+            : 'Fake 4K: sharper edges and more vibrant color.'}
+      </Typography>
     </PanelSection>
   );
 }
@@ -555,7 +834,20 @@ function Preview() {
   const frameRef = useRef<Frame | null>(null);
 
   const sceneRef = useRef<Scene | null>(null);
-  sceneRef.current = media ? { media, placement, captions, offsets, style, icons: atlas, crop, bare: cropping } : null;
+  sceneRef.current = media
+    ? {
+        media,
+        placement,
+        captions,
+        offsets,
+        style,
+        icons: atlas,
+        crop,
+        bare: cropping,
+        goldfish: state.goldfish,
+        smoothMotion: state.goldfish && media.kind === 'video',
+      }
+    : null;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -570,7 +862,7 @@ function Preview() {
   }, [canvasRef]);
 
   // Stills repaint only when something they depend on changes.
-  useLayoutEffect(draw, [draw, media, crop, cropping, placement, captions, offsets, style, atlas, fontsVersion]);
+  useLayoutEffect(draw, [draw, media, crop, cropping, placement, captions, offsets, style, atlas, fontsVersion, state.goldfish]);
 
   // Video repaints every display frame (which is also what the recorder captures).
   useEffect(() => {
@@ -891,7 +1183,7 @@ function ExportOverlay({ kind, progress }: { kind: 'video' | 'gif'; progress: nu
         <Typography variant="body2" color="text.secondary">
           {gif
             ? 'Sampling frames at a shareable size. Stay on this tab.'
-            : `The clip plays through once${state.speed === 1 ? '' : ` at ${state.speed}×`}. Keep this tab in front.`}
+            : `The clip plays through once${state.speed === 1 ? '' : ` at ${state.speed}×`}${state.audio ? ' with your soundtrack' : ''}${state.goldfish ? '. Appeal to goldfish makes this pass heavier' : ''}. Keep this tab in front.`}
         </Typography>
         <Button variant="outlined" size="small" onClick={cancelExport} sx={{ alignSelf: 'flex-start' }}>
           Cancel
@@ -974,7 +1266,8 @@ function MediaDock() {
   const { state, busy, setMedia, dispatch, openFile } = useEditor();
   const media = state.media;
   const video = media?.source instanceof HTMLVideoElement ? media.source : null;
-  const { paused, muted } = useVideoFlags(video);
+  const { paused } = useVideoFlags(video);
+  const muted = state.previewMuted;
   if (!media) return null;
 
   const moved = state.placement === 'overlay' && (state.offsets.top !== DEFAULT_OFFSETS.top || state.offsets.bottom !== DEFAULT_OFFSETS.bottom);
@@ -1004,9 +1297,7 @@ function MediaDock() {
           <Tooltip title={muted ? 'Unmute preview' : 'Mute preview'}>
             <IconButton
               size="small"
-              onClick={() => {
-                video.muted = !video.muted;
-              }}
+              onClick={() => dispatch({ type: 'previewMuted', previewMuted: !muted })}
               aria-label={muted ? 'Unmute' : 'Mute'}
             >
               {muted ? <VolumeOffRoundedIcon fontSize="small" /> : <VolumeUpRoundedIcon fontSize="small" />}

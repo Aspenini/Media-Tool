@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type Dispatch, type RefObject } from 're
 import sampleUrl from '../../assets/meme-sample.jpg';
 import { assetUrl } from '../../lib/assetUrl';
 import type { NotificationType } from '../../components/NotificationProvider';
+import { audioSpan, disposeAudio, isAudioFile, loadAudioFile } from '../../lib/meme/audio.ts';
 import { canvasToPng, copyPng, downloadBlob, extensionFor, recordVideo } from '../../lib/meme/export.ts';
 import { canvasToGif, GIF_MAX_DURATION, recordGif } from '../../lib/meme/gif.ts';
 import { baseName, loadIconFile, loadMediaFile, loadMediaUrl, trimSpan } from '../../lib/meme/media.ts';
@@ -18,6 +19,8 @@ export interface EditorActions {
   loading: boolean;
   openFile(file: File): Promise<void>;
   openSample(): Promise<void>;
+  addAudioFile(file: File): Promise<void>;
+  clearAudio(): void;
   addIconFile(file: File): Promise<void>;
   exportMedia(): Promise<void>;
   exportGif(): Promise<void>;
@@ -56,7 +59,45 @@ export function useEditorActions(options: {
     [stateRef, setMedia, notify],
   );
 
-  const openFile = useCallback((file: File) => load(() => loadMediaFile(file), "Couldn't open that file."), [load]);
+  const addAudioFile = useCallback(
+    async (file: File) => {
+      if (stateRef.current.exporting) return;
+      if (stateRef.current.media?.kind !== 'video') {
+        notify('Open a clip first, then add audio.', 'error');
+        return;
+      }
+      if (!isAudioFile(file)) {
+        notify(`“${file.name}” isn't an audio file.`, 'error');
+        return;
+      }
+      try {
+        const track = await loadAudioFile(file);
+        const previous = stateRef.current.audio;
+        dispatch({ type: 'audio', audio: track });
+        if (previous) disposeAudio(previous);
+        notify(`Added ${track.name}`, 'success');
+      } catch (error) {
+        notify(message(error, "Couldn't open that audio."), 'error');
+      }
+    },
+    [stateRef, dispatch, notify],
+  );
+
+  const clearAudio = useCallback(() => {
+    const previous = stateRef.current.audio;
+    if (!previous) return;
+    dispatch({ type: 'audio', audio: null });
+    disposeAudio(previous);
+  }, [stateRef, dispatch]);
+
+  const openFile = useCallback(
+    (file?: File) => {
+      if (!file) return Promise.resolve();
+      if (isAudioFile(file)) return addAudioFile(file);
+      return load(() => loadMediaFile(file), "Couldn't open that file.");
+    },
+    [addAudioFile, load],
+  );
 
   const openSample = useCallback(() => load(() => loadMediaUrl(assetUrl(sampleUrl), 'sample.jpg'), "Couldn't load the sample."), [load]);
 
@@ -74,7 +115,8 @@ export function useEditorActions(options: {
   );
 
   const exportMedia = useCallback(async () => {
-    const { media, trim, speed, keepPitch, exporting } = stateRef.current;
+    const { media, trim, speed, keepPitch, audio, audioTrim, audioSpeed, audioKeepPitch, audioVolume, replaceAudio, goldfish, exporting } =
+      stateRef.current;
     const canvas = canvasRef.current;
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
@@ -99,6 +141,17 @@ export function useEditorActions(options: {
         ...trimSpan(media, trim),
         speed,
         keepPitch,
+        fps: goldfish ? 60 : 30,
+        soundtrack: audio
+          ? {
+              url: audio.url,
+              ...audioSpan(audio.duration, audioTrim),
+              speed: audioSpeed,
+              keepPitch: audioKeepPitch,
+              volume: audioVolume,
+              replace: replaceAudio,
+            }
+          : undefined,
         signal: controller.signal,
         onProgress: (value) => dispatch({ type: 'exporting', exporting: { kind: 'video', progress: value } }),
       });
@@ -117,7 +170,7 @@ export function useEditorActions(options: {
   }, [stateRef, canvasRef, croppingRef, dispatch, notify]);
 
   const exportGif = useCallback(async () => {
-    const { media, crop, trim, speed, placement, captions, offsets, styles, exporting } = stateRef.current;
+    const { media, crop, trim, speed, placement, captions, offsets, styles, goldfish, exporting } = stateRef.current;
     const canvas = canvasRef.current;
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
@@ -148,6 +201,7 @@ export function useEditorActions(options: {
           style: styles[placement],
           icons: atlasRef.current,
           crop,
+          goldfish,
         },
         video: media.source as HTMLVideoElement,
         ...trimSpan(media, trim),
@@ -182,5 +236,5 @@ export function useEditorActions(options: {
 
   const cancelExport = useCallback(() => abortRef.current?.abort(), []);
 
-  return { loading, openFile, openSample, addIconFile, exportMedia, exportGif, copyImage, cancelExport };
+  return { loading, openFile, openSample, addAudioFile, clearAudio, addIconFile, exportMedia, exportGif, copyImage, cancelExport };
 }

@@ -9,6 +9,7 @@ export function TrimTimeline({
   start,
   end,
   disabled,
+  label = 'Trim range',
   onSeek,
   onChangeRange,
 }: {
@@ -17,6 +18,8 @@ export function TrimTimeline({
   start: number;
   end: number;
   disabled?: boolean;
+  /** Accessible name, so two timelines on one page don't share one. */
+  label?: string;
   onSeek: (time: number) => void;
   onChangeRange: (start: number, end: number) => void;
 }) {
@@ -59,7 +62,7 @@ export function TrimTimeline({
     <Box
       ref={trackRef}
       role="slider"
-      aria-label="Trim range"
+      aria-label={label}
       aria-valuemin={0}
       aria-valuemax={duration}
       aria-valuenow={currentTime}

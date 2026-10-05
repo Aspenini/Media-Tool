@@ -1,5 +1,6 @@
 import { cropPixels } from "./crop.ts";
 import { fontById, fontSpec } from "./fonts.ts";
+import { paintMedia } from "./goldfish.ts";
 import { layoutText, type TextBlock } from "./layout.ts";
 import type { CaptionSlot, IconAtlas, MediaAsset, Placement, Rect, TextStyle } from "./types.ts";
 
@@ -18,6 +19,10 @@ export interface Scene {
   crop: Rect | null;
   /** Draw only the uncropped media, no captions or bar — the crop editor's view. */
   bare?: boolean;
+  /** Fake-4K grade: sharper edges and louder color. Applied to the picture only. */
+  goldfish?: boolean;
+  /** Blend with the previous video frame. Preview and video export; not GIF sampling. */
+  smoothMotion?: boolean;
 }
 
 export interface Frame {
@@ -118,7 +123,12 @@ export function renderScene(canvas: HTMLCanvasElement, ctx: CanvasRenderingConte
   if (canvas.width !== frame.width) canvas.width = frame.width;
   if (canvas.height !== frame.height) canvas.height = frame.height;
   ctx.clearRect(0, 0, frame.width, frame.height);
-  ctx.drawImage(media.source, source.x, source.y, source.w, source.h, 0, barHeight, width, height);
+  const graded = Boolean(scene.goldfish) && !scene.bare;
+  paintMedia(ctx, canvas, media.source, source.x, source.y, source.w, source.h, 0, barHeight, width, height, {
+    goldfish: graded,
+    smooth: graded && Boolean(scene.smoothMotion) && media.kind === "video",
+    time: media.source instanceof HTMLVideoElement ? media.source.currentTime : null,
+  });
   if (scene.bare) return frame;
 
   if (bar) {

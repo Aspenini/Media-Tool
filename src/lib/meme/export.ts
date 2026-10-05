@@ -1,3 +1,6 @@
+import { audioTimeFor } from "./audio.ts";
+import { getAudioContextClass } from "../spatial.ts";
+
 export { downloadBlob } from "../download.ts";
 
 export function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -30,6 +33,22 @@ export function canRecordVideo(): boolean {
   return typeof MediaRecorder !== "undefined" && typeof HTMLCanvasElement.prototype.captureStream === "function";
 }
 
+/** A soundtrack mixed into the export. Played from its own element so pitch and trim stay exact. */
+export interface RecordSoundtrack {
+  url: string;
+  /** In/out points on the audio file, in seconds. */
+  start: number;
+  end: number;
+  /** Playback rate of the file. Independent of the video's speed. */
+  speed: number;
+  /** Keep the soundtrack's pitch when `speed` isn't 1×. */
+  keepPitch: boolean;
+  /** 0–1, applied on the element (capture follows it). */
+  volume: number;
+  /** Leave the clip's own audio out of the mix. */
+  replace: boolean;
+}
+
 export interface RecordOptions {
   canvas: HTMLCanvasElement;
   video: HTMLVideoElement;
@@ -38,27 +57,241 @@ export interface RecordOptions {
   end?: number;
   /** Playback rate; 2 records the span in half the time, so the clip comes out twice as fast. */
   speed?: number;
-  /** Keep the audio's pitch at rates other than 1×. */
+  /** Keep the video element's pitch at rates other than 1×. */
   keepPitch?: boolean;
+  /** Canvas capture rate. Higher when motion smoothing needs the extra frames. */
+  fps?: number;
+  soundtrack?: RecordSoundtrack;
   /** 0–1, reported as the clip plays through. */
   onProgress: (progress: number) => void;
   signal: AbortSignal;
+}
+
+function captureMedia(element: HTMLMediaElement): MediaStream | null {
+  const node = element as HTMLMediaElement & {
+    captureStream?: () => MediaStream;
+    mozCaptureStream?: () => MediaStream;
+  };
+  try {
+    return node.captureStream?.() ?? node.mozCaptureStream?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function seekMedia(element: HTMLMediaElement, time: number): Promise<void> {
+  const t = Math.max(0, time);
+  if (Math.abs(element.currentTime - t) < 0.001 && !element.seeking) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      element.removeEventListener("seeked", done);
+      resolve();
+    };
+    const timer = setTimeout(done, 2000);
+    element.addEventListener("seeked", done, { once: true });
+    element.currentTime = t;
+  });
+}
+
+async function openExportAudio(track: RecordSoundtrack): Promise<HTMLAudioElement> {
+  const audio = document.createElement("audio");
+  audio.preload = "auto";
+  audio.src = track.url;
+  await new Promise<void>((resolve, reject) => {
+    audio.addEventListener("loadeddata", () => resolve(), { once: true });
+    audio.addEventListener("error", () => reject(new Error("Couldn't read the soundtrack for export.")), { once: true });
+  });
+  const rate = Number.isFinite(track.speed) && track.speed > 0 ? track.speed : 1;
+  audio.loop = false;
+  audio.defaultPlaybackRate = rate;
+  audio.playbackRate = rate;
+  audio.preservesPitch = track.keepPitch;
+  audio.volume = Math.min(1, Math.max(0, track.volume));
+  audio.muted = false;
+  await seekMedia(audio, track.start);
+  return audio;
+}
+
+interface SoundtrackGraph {
+  /** `element` captures the playing soundtrack. `buffer` is the fallback when the browser can't. */
+  mode: "element" | "buffer";
+  close: () => void;
+  startBuffer: () => void;
+}
+
+/**
+ * Mix the clip's audio (unless replaced) and the soundtrack into one track.
+ * MediaRecorder is unreliable with two audio tracks, so they meet in an AudioContext.
+ * The buffer fallback can't preserve pitch; it's only used when captureStream has no audio.
+ */
+async function connectSoundtrack(
+  stream: MediaStream,
+  video: HTMLVideoElement,
+  exportAudio: HTMLAudioElement,
+  track: RecordSoundtrack,
+  ctx: AudioContext,
+): Promise<SoundtrackGraph> {
+  const dest = ctx.createMediaStreamDestination();
+  const nodes: AudioNode[] = [];
+  const disconnect = () => {
+    for (const node of nodes) {
+      try {
+        node.disconnect();
+      } catch {
+        // Already disconnected when the recording stopped.
+      }
+    }
+  };
+
+  try {
+    if (!track.replace) {
+      const tracks = captureMedia(video)?.getAudioTracks() ?? [];
+      if (tracks.length) {
+        const src = ctx.createMediaStreamSource(new MediaStream(tracks));
+        src.connect(dest);
+        nodes.push(src);
+      }
+    }
+
+    const audioTracks = captureMedia(exportAudio)?.getAudioTracks() ?? [];
+    let mode: SoundtrackGraph["mode"] = "element";
+    let startBuffer = () => {};
+
+    if (audioTracks.length) {
+      const src = ctx.createMediaStreamSource(new MediaStream(audioTracks));
+      src.connect(dest);
+      nodes.push(src);
+    } else {
+      mode = "buffer";
+      const bytes = await (await fetch(track.url)).arrayBuffer();
+      const buffer = await ctx.decodeAudioData(bytes.slice(0));
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = Number.isFinite(track.speed) && track.speed > 0 ? track.speed : 1;
+      const gain = ctx.createGain();
+      gain.gain.value = Math.min(1, Math.max(0, track.volume));
+      source.connect(gain);
+      gain.connect(dest);
+      gain.connect(ctx.destination);
+      nodes.push(source, gain);
+      const offset = Math.max(0, Math.min(track.start, Math.max(0, buffer.duration - 0.05)));
+      const duration = Math.max(0.05, Math.min(track.end, buffer.duration) - offset);
+      let started = false;
+      startBuffer = () => {
+        if (started) return;
+        started = true;
+        try {
+          source.start(0, offset, duration);
+        } catch {
+          // Already started or the context closed.
+        }
+      };
+    }
+
+    if (!dest.stream.getAudioTracks().length) {
+      throw new Error("Couldn't capture the soundtrack in this browser.");
+    }
+    for (const audioTrack of dest.stream.getAudioTracks()) stream.addTrack(audioTrack);
+
+    return { mode, startBuffer, close: disconnect };
+  } catch (error) {
+    disconnect();
+    throw error;
+  }
 }
 
 /**
  * Plays the clip once from its in-point to its out-point while recording the canvas, which
  * the stage keeps repainting every animation frame. Resolves with the encoded clip, or null if aborted.
  */
-export async function recordVideo({ canvas, video, start = 0, end, speed = 1, keepPitch = true, onProgress, signal }: RecordOptions): Promise<Blob | null> {
+export async function recordVideo({
+  canvas,
+  video,
+  start = 0,
+  end,
+  speed = 1,
+  keepPitch = true,
+  fps = 30,
+  soundtrack,
+  onProgress,
+  signal,
+}: RecordOptions): Promise<Blob | null> {
   if (!canRecordVideo()) throw new Error("This browser can't record canvas video. Try Chrome, Edge, or Firefox.");
 
   const mimeType = pickRecorderMime();
-  const stream = new MediaStream(canvas.captureStream(30).getVideoTracks());
+  const captureFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
+  const stream = new MediaStream(canvas.captureStream(captureFps).getVideoTracks());
+  // Built in the click turn, before any await, so the context is allowed to run.
+  const mixCtx = soundtrack ? new (getAudioContextClass())() : null;
+  if (mixCtx?.state === "suspended") void mixCtx.resume();
+  const closeMix = () => {
+    if (mixCtx && mixCtx.state !== "closed") void mixCtx.close();
+  };
+
+  // Pause before unmuting, so a replaced-off mix doesn't blast the clip's audio early.
+  video.pause();
+  const prevMuted = video.muted;
+  const prevVolume = video.volume;
+  if (soundtrack && !soundtrack.replace) {
+    video.muted = false;
+    video.volume = 1;
+  }
+
+  let exportAudio: HTMLAudioElement | null = null;
   try {
-    const capture = (video as HTMLVideoElement & { captureStream?: () => MediaStream }).captureStream?.();
-    for (const track of capture?.getAudioTracks() ?? []) stream.addTrack(track);
-  } catch {
-    // No audio capture in this browser; export silently.
+    exportAudio = soundtrack ? await openExportAudio(soundtrack) : null;
+  } catch (error) {
+    closeMix();
+    video.muted = prevMuted;
+    video.volume = prevVolume;
+    for (const track of stream.getTracks()) track.stop();
+    throw error;
+  }
+  const releaseExportAudio = () => {
+    if (!exportAudio) return;
+    exportAudio.pause();
+    exportAudio.removeAttribute("src");
+    exportAudio.load();
+    exportAudio = null;
+  };
+  if (signal.aborted) {
+    closeMix();
+    releaseExportAudio();
+    video.muted = prevMuted;
+    video.volume = prevVolume;
+    for (const track of stream.getTracks()) track.stop();
+    return null;
+  }
+
+  let graph: SoundtrackGraph | null = null;
+  try {
+    if (soundtrack && exportAudio && mixCtx) {
+      graph = await connectSoundtrack(stream, video, exportAudio, soundtrack, mixCtx);
+    } else {
+      try {
+        for (const track of captureMedia(video)?.getAudioTracks() ?? []) stream.addTrack(track);
+      } catch {
+        // No audio capture in this browser; export silently.
+      }
+    }
+  } catch (error) {
+    graph?.close();
+    closeMix();
+    releaseExportAudio();
+    video.muted = prevMuted;
+    video.volume = prevVolume;
+    for (const track of stream.getTracks()) track.stop();
+    throw error;
+  }
+  if (signal.aborted) {
+    graph?.close();
+    closeMix();
+    releaseExportAudio();
+    video.muted = prevMuted;
+    video.volume = prevVolume;
+    for (const track of stream.getTracks()) track.stop();
+    return null;
   }
 
   const recorder = new MediaRecorder(stream, {
@@ -78,6 +311,7 @@ export async function recordVideo({ canvas, video, start = 0, end, speed = 1, ke
   const stop = () => {
     if (recorder.state !== "inactive") recorder.stop();
     video.pause();
+    exportAudio?.pause();
   };
 
   const rate = Number.isFinite(speed) && speed > 0 ? speed : 1;
@@ -98,6 +332,14 @@ export async function recordVideo({ canvas, video, start = 0, end, speed = 1, ke
   const span = Math.max(0.1, clipEnd - start);
   const check = () => {
     onProgress(Math.min(1, Math.max(0, (video.currentTime - start) / span)));
+    if (exportAudio && graph?.mode === "element" && soundtrack) {
+      const expected = audioTimeFor(video.currentTime, start, rate, soundtrack.start, soundtrack.speed);
+      if (expected >= soundtrack.end - 0.03) {
+        if (!exportAudio.paused) exportAudio.pause();
+      } else if (!exportAudio.seeking && Math.abs(exportAudio.currentTime - expected) > 0.15) {
+        exportAudio.currentTime = Math.min(expected, Math.max(soundtrack.start, soundtrack.end - 0.001));
+      }
+    }
     if (video.currentTime >= clipEnd) stop();
   };
   // Poll every display frame: `timeupdate` only fires ~4×/s, too coarse for an out-point,
@@ -116,6 +358,14 @@ export async function recordVideo({ canvas, video, start = 0, end, speed = 1, ke
     recorder.start(250);
     watch = requestAnimationFrame(onFrame);
     try {
+      if (graph?.mode === "buffer") graph.startBuffer();
+      else if (exportAudio) {
+        try {
+          await exportAudio.play();
+        } catch {
+          throw new Error("Couldn't play the soundtrack. Click the preview and export again.");
+        }
+      }
       await video.play();
     } catch (error) {
       // A very short clip can end (or hit its out-point) before play() settles; anything else is a real failure.
@@ -130,10 +380,15 @@ export async function recordVideo({ canvas, video, start = 0, end, speed = 1, ke
     video.removeEventListener("ended", stop);
     signal.removeEventListener("abort", stop);
     for (const track of stream.getTracks()) track.stop();
+    graph?.close();
+    closeMix();
+    releaseExportAudio();
     video.loop = wasLooping;
     video.defaultPlaybackRate = prevDefault;
     video.playbackRate = prevRate;
     video.preservesPitch = prevPitch;
+    video.muted = prevMuted;
+    video.volume = prevVolume;
     void video.play().catch(() => undefined);
   }
 
