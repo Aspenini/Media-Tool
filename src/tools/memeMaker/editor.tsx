@@ -24,6 +24,10 @@ export interface EditorState {
   crop: Rect | null;
   /** Video in/out points; null for the whole clip. Reset with the media. */
   trim: Trim | null;
+  /** Video playback rate for preview and export. Reset with the media. */
+  speed: number;
+  /** Keep the audio's pitch when the speed isn't 1×. Reset with the media. */
+  keepPitch: boolean;
   placement: Placement;
   captions: Record<CaptionSlot, string>;
   /** Top: fraction of media height at the caption's top edge. Bottom: at its bottom edge. */
@@ -39,6 +43,8 @@ export type EditorAction =
   | { type: 'media'; media: MediaAsset | null }
   | { type: 'crop'; crop: Rect | null }
   | { type: 'trim'; trim: Trim | null }
+  | { type: 'speed'; speed: number }
+  | { type: 'keepPitch'; keepPitch: boolean }
   | { type: 'placement'; placement: Placement }
   | { type: 'caption'; slot: CaptionSlot; text: string }
   | { type: 'offset'; slot: CaptionSlot; value: number }
@@ -86,6 +92,8 @@ const DEFAULT_STATE: EditorState = {
   media: null,
   crop: null,
   trim: null,
+  speed: 1,
+  keepPitch: true,
   placement: 'overlay',
   captions: { top: 'When the :star: finally\nspawns', bottom: 'and you still miss it' },
   offsets: DEFAULT_OFFSETS,
@@ -97,11 +105,15 @@ const DEFAULT_STATE: EditorState = {
 function reducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
     case 'media':
-      return { ...state, media: action.media, crop: null, trim: null };
+      return { ...state, media: action.media, crop: null, trim: null, speed: 1, keepPitch: true };
     case 'crop':
       return { ...state, crop: action.crop };
     case 'trim':
       return { ...state, trim: action.trim };
+    case 'speed':
+      return { ...state, speed: action.speed };
+    case 'keepPitch':
+      return { ...state, keepPitch: action.keepPitch };
     case 'placement':
       return { ...state, placement: action.placement };
     case 'caption':

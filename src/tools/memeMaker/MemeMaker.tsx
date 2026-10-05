@@ -61,6 +61,7 @@ const CROP_ASPECTS: SegmentOption<CropAspect>[] = [
   { value: '16:9', label: '16:9' },
   { value: '9:16', label: '9:16' },
 ];
+const SPEEDS: SegmentOption<number>[] = [0.5, 1, 1.5, 2, 3, 4].map((value) => ({ value, label: `${value}×` }));
 const CROP_HANDLES: { handle: CropHandle; left: string; top: string }[] = [
   { handle: 'nw', left: '0%', top: '0%' },
   { handle: 'n', left: '50%', top: '0%' },
@@ -84,6 +85,7 @@ export function MemeMaker() {
 function Studio() {
   useShortcuts();
   useTrimLoop();
+  usePlaybackSpeed();
   const { state, busy, openFile } = useEditor();
   return (
     <Workbench panelWidth={360}>
@@ -172,6 +174,19 @@ function useTrimLoop() {
   }, [media, trim, busy]);
 }
 
+/** Apply the chosen speed and pitch setting to the preview element (which the recorder plays too). */
+function usePlaybackSpeed() {
+  const { state } = useEditor();
+  const { media, speed, keepPitch } = state;
+  useEffect(() => {
+    if (!(media?.source instanceof HTMLVideoElement)) return;
+    const video = media.source;
+    video.defaultPlaybackRate = speed;
+    video.playbackRate = speed;
+    video.preservesPitch = keepPitch;
+  }, [media, speed, keepPitch]);
+}
+
 function useVideoTime(video: HTMLVideoElement | null): number {
   const [time, setTime] = useState(0);
   useEffect(() => {
@@ -247,6 +262,7 @@ function Controls() {
         </PanelSection>
         {media && <CropSection />}
         {media?.kind === 'video' && <TrimSection />}
+        {media?.kind === 'video' && <SpeedSection />}
         <CaptionSection />
         <IconSection />
         <StyleSection />
@@ -340,6 +356,29 @@ function TrimSection() {
       <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.8rem', color: 'text.secondary', mt: -0.5 }}>
         {formatTimecode(span.start)} → {formatTimecode(span.end)} · {formatTimecode(span.end - span.start)} long
       </Typography>
+    </PanelSection>
+  );
+}
+
+function SpeedSection() {
+  const { state, dispatch } = useEditor();
+  const { media, speed, keepPitch } = state;
+  const span = media && trimSpan(media, state.trim);
+  return (
+    <PanelSection
+      title="Speed"
+      action={
+        span && (
+          <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.8rem', color: 'text.secondary' }}>
+            {formatTimecode((span.end - span.start) / speed)} out
+          </Typography>
+        )
+      }
+    >
+      <Segmented<number> aria-label="Playback speed" value={speed} onChange={(next) => dispatch({ type: 'speed', speed: next })} options={SPEEDS} />
+      {speed !== 1 && (
+        <SwitchRow label="Keep audio pitch" checked={keepPitch} onChange={(next) => dispatch({ type: 'keepPitch', keepPitch: next })} />
+      )}
     </PanelSection>
   );
 }
@@ -829,7 +868,7 @@ function CaptionHandle({
 }
 
 function ExportOverlay({ kind, progress }: { kind: 'video' | 'gif'; progress: number }) {
-  const { cancelExport } = useEditor();
+  const { cancelExport, state } = useEditor();
   const gif = kind === 'gif';
   return (
     <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', bgcolor: 'rgba(0,0,0,0.45)', borderRadius: 1.5, lineHeight: 1.5 }}>
@@ -850,7 +889,9 @@ function ExportOverlay({ kind, progress }: { kind: 'video' | 'gif'; progress: nu
         </Box>
         <LinearProgress variant="determinate" value={progress * 100} aria-label="Export progress" />
         <Typography variant="body2" color="text.secondary">
-          {gif ? 'Sampling frames at a shareable size. Stay on this tab.' : 'The clip plays through once in real time. Keep this tab in front.'}
+          {gif
+            ? 'Sampling frames at a shareable size. Stay on this tab.'
+            : `The clip plays through once${state.speed === 1 ? '' : ` at ${state.speed}×`}. Keep this tab in front.`}
         </Typography>
         <Button variant="outlined" size="small" onClick={cancelExport} sx={{ alignSelf: 'flex-start' }}>
           Cancel

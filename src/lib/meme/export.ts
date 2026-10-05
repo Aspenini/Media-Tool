@@ -36,6 +36,10 @@ export interface RecordOptions {
   /** In/out points in seconds; defaults to the whole clip. */
   start?: number;
   end?: number;
+  /** Playback rate; 2 records the span in half the time, so the clip comes out twice as fast. */
+  speed?: number;
+  /** Keep the audio's pitch at rates other than 1×. */
+  keepPitch?: boolean;
   /** 0–1, reported as the clip plays through. */
   onProgress: (progress: number) => void;
   signal: AbortSignal;
@@ -45,7 +49,7 @@ export interface RecordOptions {
  * Plays the clip once from its in-point to its out-point while recording the canvas, which
  * the stage keeps repainting every animation frame. Resolves with the encoded clip, or null if aborted.
  */
-export async function recordVideo({ canvas, video, start = 0, end, onProgress, signal }: RecordOptions): Promise<Blob | null> {
+export async function recordVideo({ canvas, video, start = 0, end, speed = 1, keepPitch = true, onProgress, signal }: RecordOptions): Promise<Blob | null> {
   if (!canRecordVideo()) throw new Error("This browser can't record canvas video. Try Chrome, Edge, or Firefox.");
 
   const mimeType = pickRecorderMime();
@@ -76,9 +80,17 @@ export async function recordVideo({ canvas, video, start = 0, end, onProgress, s
     video.pause();
   };
 
+  const rate = Number.isFinite(speed) && speed > 0 ? speed : 1;
   const wasLooping = video.loop;
+  const prevRate = video.playbackRate;
+  const prevDefault = video.defaultPlaybackRate;
+  const prevPitch = video.preservesPitch;
   video.loop = false;
   video.pause();
+  // Set pitch after the rate. Assigning playbackRate can reset preservesPitch.
+  video.defaultPlaybackRate = rate;
+  video.playbackRate = rate;
+  video.preservesPitch = keepPitch;
   video.currentTime = start;
   if (video.seeking) await new Promise((resolve) => video.addEventListener("seeked", resolve, { once: true }));
 
@@ -98,7 +110,7 @@ export async function recordVideo({ canvas, video, start = 0, end, onProgress, s
   video.addEventListener("timeupdate", check);
   video.addEventListener("ended", stop, { once: true });
   signal.addEventListener("abort", stop, { once: true });
-  const safety = setTimeout(stop, span * 1000 + 3000);
+  const safety = setTimeout(stop, (span / rate) * 1000 + 3000);
 
   try {
     recorder.start(250);
@@ -119,6 +131,9 @@ export async function recordVideo({ canvas, video, start = 0, end, onProgress, s
     signal.removeEventListener("abort", stop);
     for (const track of stream.getTracks()) track.stop();
     video.loop = wasLooping;
+    video.defaultPlaybackRate = prevDefault;
+    video.playbackRate = prevRate;
+    video.preservesPitch = prevPitch;
     void video.play().catch(() => undefined);
   }
 

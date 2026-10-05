@@ -74,7 +74,7 @@ export function useEditorActions(options: {
   );
 
   const exportMedia = useCallback(async () => {
-    const { media, trim, exporting } = stateRef.current;
+    const { media, trim, speed, keepPitch, exporting } = stateRef.current;
     const canvas = canvasRef.current;
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
@@ -97,6 +97,8 @@ export function useEditorActions(options: {
         canvas,
         video: media.source as HTMLVideoElement,
         ...trimSpan(media, trim),
+        speed,
+        keepPitch,
         signal: controller.signal,
         onProgress: (value) => dispatch({ type: 'exporting', exporting: { kind: 'video', progress: value } }),
       });
@@ -115,7 +117,7 @@ export function useEditorActions(options: {
   }, [stateRef, canvasRef, croppingRef, dispatch, notify]);
 
   const exportGif = useCallback(async () => {
-    const { media, crop, trim, placement, captions, offsets, styles, exporting } = stateRef.current;
+    const { media, crop, trim, speed, placement, captions, offsets, styles, exporting } = stateRef.current;
     const canvas = canvasRef.current;
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
@@ -149,6 +151,7 @@ export function useEditorActions(options: {
         },
         video: media.source as HTMLVideoElement,
         ...trimSpan(media, trim),
+        speed,
         signal: controller.signal,
         onProgress: (progress) => dispatch({ type: 'exporting', exporting: { kind: 'gif', progress } }),
       });
