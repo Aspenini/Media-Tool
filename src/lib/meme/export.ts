@@ -33,16 +33,19 @@ export function canRecordVideo(): boolean {
 export interface RecordOptions {
   canvas: HTMLCanvasElement;
   video: HTMLVideoElement;
+  /** In/out points in seconds; defaults to the whole clip. */
+  start?: number;
+  end?: number;
   /** 0–1, reported as the clip plays through. */
   onProgress: (progress: number) => void;
   signal: AbortSignal;
 }
 
 /**
- * Plays the clip once from the start while recording the canvas, which the stage keeps
- * repainting every animation frame. Resolves with the encoded clip, or null if aborted.
+ * Plays the clip once from its in-point to its out-point while recording the canvas, which
+ * the stage keeps repainting every animation frame. Resolves with the encoded clip, or null if aborted.
  */
-export async function recordVideo({ canvas, video, onProgress, signal }: RecordOptions): Promise<Blob | null> {
+export async function recordVideo({ canvas, video, start = 0, end, onProgress, signal }: RecordOptions): Promise<Blob | null> {
   if (!canRecordVideo()) throw new Error("This browser can't record canvas video. Try Chrome, Edge, or Firefox.");
 
   const mimeType = pickRecorderMime();
@@ -70,34 +73,48 @@ export async function recordVideo({ canvas, video, onProgress, signal }: RecordO
   stopped.catch(() => undefined);
   const stop = () => {
     if (recorder.state !== "inactive") recorder.stop();
+    video.pause();
   };
 
   const wasLooping = video.loop;
   video.loop = false;
   video.pause();
-  video.currentTime = 0;
+  video.currentTime = start;
   if (video.seeking) await new Promise((resolve) => video.addEventListener("seeked", resolve, { once: true }));
 
-  const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 10;
-  const onTime = () => onProgress(Math.min(1, video.currentTime / duration));
-  video.addEventListener("timeupdate", onTime);
+  const clipEnd = end ?? (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : start + 10);
+  const span = Math.max(0.1, clipEnd - start);
+  const check = () => {
+    onProgress(Math.min(1, Math.max(0, (video.currentTime - start) / span)));
+    if (video.currentTime >= clipEnd) stop();
+  };
+  // Poll every display frame: `timeupdate` only fires ~4×/s, too coarse for an out-point,
+  // but it keeps firing when animation frames are throttled in a background tab.
+  let watch = 0;
+  const onFrame = () => {
+    check();
+    if (recorder.state !== "inactive") watch = requestAnimationFrame(onFrame);
+  };
+  video.addEventListener("timeupdate", check);
   video.addEventListener("ended", stop, { once: true });
   signal.addEventListener("abort", stop, { once: true });
-  const safety = setTimeout(stop, duration * 1000 + 3000);
+  const safety = setTimeout(stop, span * 1000 + 3000);
 
   try {
     recorder.start(250);
+    watch = requestAnimationFrame(onFrame);
     try {
       await video.play();
     } catch (error) {
-      // A very short clip can end before play() settles; anything else is a real failure.
-      if (!video.ended) throw error;
+      // A very short clip can end (or hit its out-point) before play() settles; anything else is a real failure.
+      if (!video.ended && recorder.state !== "inactive") throw error;
     }
     await stopped;
   } finally {
     stop();
     clearTimeout(safety);
-    video.removeEventListener("timeupdate", onTime);
+    cancelAnimationFrame(watch);
+    video.removeEventListener("timeupdate", check);
     video.removeEventListener("ended", stop);
     signal.removeEventListener("abort", stop);
     for (const track of stream.getTracks()) track.stop();

@@ -1,4 +1,4 @@
-import type { InlineIcon, MediaAsset } from "./types.ts";
+import type { InlineIcon, MediaAsset, Trim } from "./types.ts";
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)$/i;
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|avif|bmp|svg)$/i;
@@ -67,10 +67,18 @@ export async function loadMediaFile(file: File): Promise<MediaAsset> {
   try {
     if (file.type.startsWith("video/") || VIDEO_EXT.test(file.name)) {
       const video = await decodeVideo(url);
-      return { kind: "video", source: video, name: file.name, width: video.videoWidth, height: video.videoHeight, url };
+      return {
+        kind: "video",
+        source: video,
+        name: file.name,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: video.duration,
+        url,
+      };
     }
     const image = await decodeImage(url);
-    return { kind: "image", source: image, name: file.name, width: image.naturalWidth, height: image.naturalHeight, url };
+    return { kind: "image", source: image, name: file.name, width: image.naturalWidth, height: image.naturalHeight, duration: 0, url };
   } catch (error) {
     URL.revokeObjectURL(url);
     throw error;
@@ -79,7 +87,7 @@ export async function loadMediaFile(file: File): Promise<MediaAsset> {
 
 export async function loadMediaUrl(url: string, name: string): Promise<MediaAsset> {
   const image = await decodeImage(url);
-  return { kind: "image", source: image, name, width: image.naturalWidth, height: image.naturalHeight, url };
+  return { kind: "image", source: image, name, width: image.naturalWidth, height: image.naturalHeight, duration: 0, url };
 }
 
 export function disposeMedia(media: MediaAsset): void {
@@ -121,4 +129,10 @@ export async function loadIconFile(file: File, taken: (id: string) => boolean): 
 
 export function baseName(name: string): string {
   return name.replace(/\.[^.]+$/, "") || "meme";
+}
+
+/** The playable span of a video: its trim, or the whole clip. Null when the length is unknown. */
+export function trimSpan(media: MediaAsset, trim: Trim | null): Trim | null {
+  if (media.kind !== "video" || !Number.isFinite(media.duration) || media.duration <= 0) return null;
+  return trim ?? { start: 0, end: media.duration };
 }

@@ -15,11 +15,15 @@ import { useNotification } from '../../components/NotificationProvider';
 import { preloadFonts } from '../../lib/meme/fonts.ts';
 import { BUILTIN_ICONS, loadSvgImage } from '../../lib/meme/icons.ts';
 import { disposeMedia } from '../../lib/meme/media.ts';
-import type { CaptionSlot, IconAtlas, InlineIcon, MediaAsset, Placement, TextStyle } from '../../lib/meme/types.ts';
+import type { CaptionSlot, IconAtlas, InlineIcon, MediaAsset, Placement, Rect, TextStyle, Trim } from '../../lib/meme/types.ts';
 import { useEditorActions, type EditorActions } from './actions';
 
 export interface EditorState {
   media: MediaAsset | null;
+  /** Normalised source crop; null for the full frame. Reset with the media. */
+  crop: Rect | null;
+  /** Video in/out points; null for the whole clip. Reset with the media. */
+  trim: Trim | null;
   placement: Placement;
   captions: Record<CaptionSlot, string>;
   /** Top: fraction of media height at the caption's top edge. Bottom: at its bottom edge. */
@@ -33,6 +37,8 @@ export interface EditorState {
 
 export type EditorAction =
   | { type: 'media'; media: MediaAsset | null }
+  | { type: 'crop'; crop: Rect | null }
+  | { type: 'trim'; trim: Trim | null }
   | { type: 'placement'; placement: Placement }
   | { type: 'caption'; slot: CaptionSlot; text: string }
   | { type: 'offset'; slot: CaptionSlot; value: number }
@@ -42,6 +48,16 @@ export type EditorAction =
   | { type: 'addIcon'; icon: InlineIcon }
   | { type: 'removeIcon'; id: string }
   | { type: 'exporting'; exporting: EditorState['exporting'] };
+
+export type CropAspect = 'free' | 'original' | '1:1' | '4:5' | '16:9' | '9:16';
+
+/** Pixel width / height a crop is locked to, or null for freeform. */
+export function cropRatio(aspect: CropAspect, media: MediaAsset): number | null {
+  if (aspect === 'free') return null;
+  if (aspect === 'original') return media.width / media.height;
+  const [w, h] = aspect.split(':').map(Number);
+  return w / h;
+}
 
 export const DEFAULT_OFFSETS: Record<CaptionSlot, number> = { top: 0.04, bottom: 0.96 };
 
@@ -68,6 +84,8 @@ export const DEFAULT_STYLES: Record<Placement, TextStyle> = {
 
 const DEFAULT_STATE: EditorState = {
   media: null,
+  crop: null,
+  trim: null,
   placement: 'overlay',
   captions: { top: 'When the :star: finally\nspawns', bottom: 'and you still miss it' },
   offsets: DEFAULT_OFFSETS,
@@ -79,7 +97,11 @@ const DEFAULT_STATE: EditorState = {
 function reducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
     case 'media':
-      return { ...state, media: action.media };
+      return { ...state, media: action.media, crop: null, trim: null };
+    case 'crop':
+      return { ...state, crop: action.crop };
+    case 'trim':
+      return { ...state, trim: action.trim };
     case 'placement':
       return { ...state, placement: action.placement };
     case 'caption':
@@ -157,6 +179,11 @@ export interface Editor extends EditorActions {
   /** Bumps whenever a web font finishes loading, so the canvas can repaint. */
   fontsVersion: number;
   busy: boolean;
+  /** True while the stage shows the crop editor instead of the meme. */
+  cropping: boolean;
+  setCropping(cropping: boolean): void;
+  cropAspect: CropAspect;
+  setCropAspect(aspect: CropAspect): void;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   fieldRefs: Record<CaptionSlot, RefObject<HTMLTextAreaElement | null>>;
   setMedia(media: MediaAsset | null): void;
@@ -221,6 +248,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const topRef = useRef<HTMLTextAreaElement | null>(null);
   const bottomRef = useRef<HTMLTextAreaElement | null>(null);
   const lastField = useRef<CaptionSlot>('top');
+  const [cropping, setCropping] = useState(false);
+  const [cropAspect, setCropAspect] = useState<CropAspect>('free');
 
   // Live mirror of state for event handlers that outlive a render.
   const stateRef = useRef(state);
@@ -245,6 +274,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const setMedia = useCallback((media: MediaAsset | null) => {
     const previous = stateRef.current.media;
     dispatch({ type: 'media', media });
+    setCropping(false);
+    setCropAspect('free');
     if (previous && previous !== media) disposeMedia(previous);
   }, []);
 
@@ -278,7 +309,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const notify = useNotification();
-  const actions = useEditorActions({ stateRef, dispatch, setMedia, atlas, canvasRef, notify });
+  const croppingRef = useRef(cropping);
+  croppingRef.current = cropping;
+  const actions = useEditorActions({ stateRef, dispatch, setMedia, atlas, canvasRef, croppingRef, notify });
 
   const editor: Editor = {
     ...actions,
@@ -289,6 +322,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     atlas,
     fontsVersion,
     busy: state.exporting !== null,
+    cropping,
+    setCropping,
+    cropAspect,
+    setCropAspect,
     canvasRef,
     fieldRefs: { top: topRef, bottom: bottomRef },
     setMedia,

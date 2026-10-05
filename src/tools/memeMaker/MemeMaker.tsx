@@ -31,22 +31,46 @@ import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import VolumeOffRoundedIcon from '@mui/icons-material/VolumeOffRounded';
 import VolumeUpRoundedIcon from '@mui/icons-material/VolumeUpRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import CropRoundedIcon from '@mui/icons-material/CropRounded';
 import { useIncomingFiles } from '../../components/FileBridge';
 import { FileButton, FileDropZone } from '../../components/FileDropZone';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../../components/Workbench';
 import { ExportFooter } from '../../components/ExportFooter';
-import { ChoiceCard, ColorField, Segmented, SliderField, SwitchRow } from '../../components/controls';
+import { ChoiceCard, ColorField, Segmented, SliderField, SwitchRow, type SegmentOption } from '../../components/controls';
+import { TrimTimeline } from '../../components/TrimTimeline';
+import { cropPixels, dragCrop, fitAspect, FULL_CROP, isFullCrop, type CropHandle } from '../../lib/meme/crop.ts';
+import { trimSpan } from '../../lib/meme/media.ts';
+import { clampRange, formatTimecode } from '../../lib/videoTrim';
 import { canCopyImage } from '../../lib/meme/export.ts';
 import { FONTS } from '../../lib/meme/fonts.ts';
 import { renderScene, sameFrame, type Frame, type Scene } from '../../lib/meme/render.ts';
 import type { CaptionSlot, Placement, Rect, TextAlign, TextStyle } from '../../lib/meme/types.ts';
 import { MONO_FONT } from '../../theme';
-import { DEFAULT_OFFSETS, EditorProvider, useEditor } from './editor';
+import { cropRatio, DEFAULT_OFFSETS, EditorProvider, useEditor, type CropAspect } from './editor';
 
 const MEDIA_ACCEPT = 'image/*,video/*';
 const SNAP = 0.015;
 const FILL_PRESETS = ['#ffffff', '#111111', '#ffd23f', '#ff4d6d', '#4dd8ff', '#7cff6b'];
 const STROKE_PRESETS = ['#000000', '#ffffff', '#5a2d00', '#2a1459', '#b0123a', '#0b4a6f'];
+const CROP_ASPECTS: SegmentOption<CropAspect>[] = [
+  { value: 'free', label: 'Free' },
+  { value: 'original', label: 'Original' },
+  { value: '1:1', label: '1:1' },
+  { value: '4:5', label: '4:5' },
+  { value: '16:9', label: '16:9' },
+  { value: '9:16', label: '9:16' },
+];
+const CROP_HANDLES: { handle: CropHandle; left: string; top: string }[] = [
+  { handle: 'nw', left: '0%', top: '0%' },
+  { handle: 'n', left: '50%', top: '0%' },
+  { handle: 'ne', left: '100%', top: '0%' },
+  { handle: 'e', left: '100%', top: '50%' },
+  { handle: 'se', left: '100%', top: '100%' },
+  { handle: 's', left: '50%', top: '100%' },
+  { handle: 'sw', left: '0%', top: '100%' },
+  { handle: 'w', left: '0%', top: '50%' },
+];
 const MOD = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform) ? '⌘' : 'Ctrl';
 
 export function MemeMaker() {
@@ -59,6 +83,7 @@ export function MemeMaker() {
 
 function Studio() {
   useShortcuts();
+  useTrimLoop();
   const { state, busy, openFile } = useEditor();
   return (
     <Workbench panelWidth={360}>
@@ -86,14 +111,20 @@ function Studio() {
   );
 }
 
-/** Ctrl/⌘ S exports and Ctrl/⌘ O opens a file — while this tool is open. */
+/** Ctrl/⌘ S exports and Ctrl/⌘ O opens a file — while this tool is open. Enter or Esc finishes a crop. */
 function useShortcuts() {
-  const { openFile, exportMedia, busy } = useEditor();
+  const { openFile, exportMedia, busy, cropping, setCropping } = useEditor();
   useIncomingFiles((files) => {
     if (!busy) void openFile(files[0]);
   });
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const typing = event.target instanceof HTMLElement && event.target.closest('input, textarea, button, [role="slider"]');
+      if (cropping && (event.key === 'Escape' || (event.key === 'Enter' && !typing))) {
+        event.preventDefault();
+        setCropping(false);
+        return;
+      }
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
       const key = event.key.toLowerCase();
       if (key === 's') {
@@ -106,7 +137,52 @@ function useShortcuts() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [exportMedia, busy]);
+  }, [exportMedia, busy, cropping, setCropping]);
+}
+
+/** Keep a trimmed clip looping between its in and out points while previewing. */
+function useTrimLoop() {
+  const { state, busy } = useEditor();
+  const { media, trim } = state;
+  useEffect(() => {
+    const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+    const span = media && trimSpan(media, trim);
+    // Untrimmed clips use the element's own loop; exports drive playback themselves.
+    if (!video || !span || !trim || busy) return;
+    const check = () => {
+      const t = video.currentTime;
+      if (!video.paused && !video.seeking && (t >= span.end || t < span.start - 0.05)) video.currentTime = span.start;
+    };
+    // Every frame for a tight loop; `timeupdate` covers background tabs where frames stop.
+    let handle = requestAnimationFrame(function tick() {
+      check();
+      handle = requestAnimationFrame(tick);
+    });
+    const onEnded = () => {
+      video.currentTime = span.start;
+      void video.play().catch(() => undefined);
+    };
+    video.addEventListener('timeupdate', check);
+    video.addEventListener('ended', onEnded);
+    return () => {
+      cancelAnimationFrame(handle);
+      video.removeEventListener('timeupdate', check);
+      video.removeEventListener('ended', onEnded);
+    };
+  }, [media, trim, busy]);
+}
+
+function useVideoTime(video: HTMLVideoElement | null): number {
+  const [time, setTime] = useState(0);
+  useEffect(() => {
+    if (!video) return;
+    let handle = requestAnimationFrame(function tick() {
+      setTime(video.currentTime);
+      handle = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [video]);
+  return time;
 }
 
 /* ------------------------------------------------------------------ *
@@ -114,8 +190,9 @@ function useShortcuts() {
  * ------------------------------------------------------------------ */
 
 function Controls() {
-  const { state, busy, exportMedia, exportGif, copyImage, openFile } = useEditor();
+  const { state, busy, cropping, exportMedia, exportGif, copyImage, openFile } = useEditor();
   const media = state.media;
+  const locked = busy || cropping;
   const gifBusy = state.exporting?.kind === 'gif';
   const videoBusy = state.exporting?.kind === 'video';
 
@@ -129,7 +206,7 @@ function Controls() {
             busy: videoBusy,
             busyLabel: 'Recording…',
             onClick: () => void exportMedia(),
-            disabled: !media || busy,
+            disabled: !media || locked,
             title: `${MOD}+S`,
           }}
           aside={
@@ -137,7 +214,7 @@ function Controls() {
             canCopyImage() && (
               <Tooltip title="Copy to clipboard">
                 <span>
-                  <Button size="large" variant="outlined" onClick={() => void copyImage()} disabled={busy} aria-label="Copy image" sx={{ minWidth: 0, px: 2, height: '100%' }}>
+                  <Button size="large" variant="outlined" onClick={() => void copyImage()} disabled={locked} aria-label="Copy image" sx={{ minWidth: 0, px: 2, height: '100%' }}>
                     <ContentCopyRoundedIcon fontSize="small" />
                   </Button>
                 </span>
@@ -151,10 +228,10 @@ function Controls() {
               busy: gifBusy,
               busyLabel: 'Encoding…',
               onClick: () => void exportGif(),
-              disabled: busy,
+              disabled: locked,
             }
           }
-          status={media?.kind === 'video' ? 'GIFs are 10 fps, up to 10 seconds, scaled to 480px and dithered.' : undefined}
+          status={cropping ? 'Finish cropping to export.' : media?.kind === 'video' ? 'GIFs are 10 fps, up to 10 seconds, scaled to 480px and dithered.' : undefined}
         />
         }
     >
@@ -168,11 +245,102 @@ function Controls() {
             onFiles={(files) => void openFile(files[0])}
           />
         </PanelSection>
+        {media && <CropSection />}
+        {media?.kind === 'video' && <TrimSection />}
         <CaptionSection />
         <IconSection />
         <StyleSection />
       </Box>
     </Panel>
+  );
+}
+
+function CropSection() {
+  const { state, dispatch, cropping, setCropping, cropAspect, setCropAspect } = useEditor();
+  const media = state.media;
+  if (!media) return null;
+  const cropped = !isFullCrop(state.crop);
+  const px = cropPixels(state.crop, media.width, media.height);
+
+  const chooseAspect = (aspect: CropAspect) => {
+    setCropAspect(aspect);
+    const ratio = cropRatio(aspect, media);
+    if (ratio) dispatch({ type: 'crop', crop: fitAspect(state.crop ?? FULL_CROP, ratio, media.width, media.height) });
+    setCropping(true);
+  };
+
+  return (
+    <PanelSection
+      title="Crop"
+      action={
+        cropped && (
+          <Button size="small" variant="text" startIcon={<RestartAltRoundedIcon />} onClick={() => dispatch({ type: 'crop', crop: null })}>
+            Reset
+          </Button>
+        )
+      }
+    >
+      <Segmented<CropAspect> wrap aria-label="Crop aspect ratio" value={cropAspect} onChange={chooseAspect} options={CROP_ASPECTS} />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Button
+          variant={cropping ? 'contained' : 'outlined'}
+          startIcon={cropping ? <CheckRoundedIcon /> : <CropRoundedIcon />}
+          onClick={() => setCropping(!cropping)}
+          title={cropping ? 'Enter' : undefined}
+        >
+          {cropping ? 'Done' : 'Edit crop'}
+        </Button>
+        <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.8rem', color: 'text.secondary' }}>
+          {cropped ? `${px.w} × ${px.h}` : 'Full frame'}
+        </Typography>
+      </Box>
+    </PanelSection>
+  );
+}
+
+function TrimSection() {
+  const { state, dispatch, busy } = useEditor();
+  const media = state.media;
+  const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+  const currentTime = useVideoTime(video);
+  const span = media && trimSpan(media, state.trim);
+  if (!media || !video || !span) return null;
+  const trimmed = state.trim !== null && (span.start > 0.001 || span.end < media.duration - 0.001);
+
+  const seek = (time: number) => {
+    video.currentTime = Math.min(Math.max(0, time), media.duration);
+  };
+
+  return (
+    <PanelSection
+      title="Trim"
+      action={
+        trimmed && (
+          <Button size="small" variant="text" startIcon={<RestartAltRoundedIcon />} onClick={() => dispatch({ type: 'trim', trim: null })}>
+            Reset
+          </Button>
+        )
+      }
+    >
+      <TrimTimeline
+        duration={media.duration}
+        currentTime={currentTime}
+        start={span.start}
+        end={span.end}
+        disabled={busy}
+        onSeek={seek}
+        onChangeRange={(start, end) => {
+          const next = clampRange(start, end, media.duration);
+          // Hold on the frame being trimmed to, rather than looping past it.
+          video.pause();
+          dispatch({ type: 'trim', trim: next });
+          seek(Math.abs(next.start - span.start) >= Math.abs(next.end - span.end) ? next.start : next.end);
+        }}
+      />
+      <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.8rem', color: 'text.secondary', mt: -0.5 }}>
+        {formatTimecode(span.start)} → {formatTimecode(span.end)} · {formatTimecode(span.end - span.start)} long
+      </Typography>
+    </PanelSection>
   );
 }
 
@@ -341,14 +509,14 @@ function pct(value: number, of: number): string {
 }
 
 function Preview() {
-  const { state, style, atlas, fontsVersion, canvasRef, dispatch, loading } = useEditor();
-  const { media, placement, captions, offsets } = state;
+  const { state, style, atlas, fontsVersion, canvasRef, dispatch, loading, cropping } = useEditor();
+  const { media, crop, placement, captions, offsets } = state;
   const [frame, setFrame] = useState<Frame | null>(null);
   const [snapped, setSnapped] = useState(false);
   const frameRef = useRef<Frame | null>(null);
 
   const sceneRef = useRef<Scene | null>(null);
-  sceneRef.current = media ? { media, placement, captions, offsets, style, icons: atlas } : null;
+  sceneRef.current = media ? { media, placement, captions, offsets, style, icons: atlas, crop, bare: cropping } : null;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -363,7 +531,7 @@ function Preview() {
   }, [canvasRef]);
 
   // Stills repaint only when something they depend on changes.
-  useLayoutEffect(draw, [draw, media, placement, captions, offsets, style, atlas, fontsVersion]);
+  useLayoutEffect(draw, [draw, media, crop, cropping, placement, captions, offsets, style, atlas, fontsVersion]);
 
   // Video repaints every display frame (which is also what the recorder captures).
   useEffect(() => {
@@ -423,7 +591,8 @@ function Preview() {
           boxShadow: theme.palette.mode === 'dark' ? '0 0 0 1px rgba(255,255,255,0.06), 0 24px 60px -18px rgba(0,0,0,0.85)' : '0 0 0 1px rgba(0,0,0,0.06), 0 24px 50px -24px rgba(0,0,0,0.35)',
         })}
       />
-      {frame && placement === 'overlay' && (
+      {frame && cropping && <CropOverlay />}
+      {frame && !cropping && placement === 'overlay' && (
         <Box sx={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           {snapped && (
             <Box
@@ -449,6 +618,108 @@ function Preview() {
           <CircularProgress />
         </Box>
       )}
+    </Box>
+  );
+}
+
+function CropOverlay() {
+  const { state, dispatch, cropAspect } = useEditor();
+  const areaRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ handle: CropHandle; x: number; y: number; start: Rect } | null>(null);
+  const media = state.media;
+  if (!media) return null;
+  const crop = state.crop ?? FULL_CROP;
+  const ratio = cropRatio(cropAspect, media);
+  const px = cropPixels(crop, media.width, media.height);
+  const update = (next: Rect) => dispatch({ type: 'crop', crop: isFullCrop(next) ? null : next });
+  const box = { position: 'absolute', left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.w * 100}%`, height: `${crop.h * 100}%` } as const;
+
+  const begin = (handle: CropHandle) => (event: React.PointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    areaRef.current?.setPointerCapture(event.pointerId);
+    drag.current = { handle, x: event.clientX, y: event.clientY, start: crop };
+  };
+  const end = () => {
+    drag.current = null;
+  };
+
+  return (
+    <Box
+      ref={areaRef}
+      onPointerMove={(event) => {
+        const current = drag.current;
+        const rect = areaRef.current?.getBoundingClientRect();
+        if (!current || !rect || rect.width <= 0 || rect.height <= 0) return;
+        const dx = (event.clientX - current.x) / rect.width;
+        const dy = (event.clientY - current.y) / rect.height;
+        update(dragCrop(current.start, current.handle, dx, dy, ratio, media.width, media.height));
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      sx={{ position: 'absolute', inset: 0, touchAction: 'none', userSelect: 'none' }}
+    >
+      {/* Only the shade is clipped to the canvas, so handles on a full-frame crop stay grabbable. */}
+      <Box aria-hidden sx={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 1.5, pointerEvents: 'none' }}>
+        <Box sx={{ ...box, boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)' }} />
+      </Box>
+      <Box
+        role="group"
+        tabIndex={0}
+        aria-label={`Crop area, ${px.w} by ${px.h}. Drag to move, drag the handles to resize, or use arrow keys. Enter to finish.`}
+        onPointerDown={begin('move')}
+        onKeyDown={(event: React.KeyboardEvent) => {
+          const step = event.shiftKey ? 0.05 : 0.01;
+          const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+          const move = moves[event.key];
+          if (!move) return;
+          event.preventDefault();
+          update(dragCrop(crop, 'move', move[0], move[1], ratio, media.width, media.height));
+        }}
+        sx={(theme) => ({
+          ...box,
+          cursor: 'move',
+          outline: '1.5px solid #fff',
+          '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}` },
+        })}
+      >
+        {/* Rule-of-thirds guides. */}
+        <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: '33.333%', right: '33.333%', borderLeft: '1px solid', borderRight: '1px solid', borderColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
+        <Box sx={{ position: 'absolute', left: 0, right: 0, top: '33.333%', bottom: '33.333%', borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
+        <Typography
+          aria-hidden
+          sx={{ position: 'absolute', left: 6, top: 6, px: 0.75, borderRadius: 1, bgcolor: 'rgba(0,0,0,0.6)', color: '#fff', fontFamily: MONO_FONT, fontSize: '0.7rem', lineHeight: 1.6, pointerEvents: 'none' }}
+        >
+          {px.w}×{px.h}
+        </Typography>
+        {CROP_HANDLES.map(({ handle, left, top }) => (
+          <Box
+            key={handle}
+            aria-hidden
+            onPointerDown={begin(handle)}
+            sx={{
+              position: 'absolute',
+              left,
+              top,
+              width: 28,
+              height: 28,
+              transform: 'translate(-50%, -50%)',
+              display: 'grid',
+              placeItems: 'center',
+              cursor: `${handle}-resize`,
+              '&::after': {
+                content: '""',
+                width: handle.length === 2 ? 14 : handle === 'n' || handle === 's' ? 22 : 6,
+                height: handle.length === 2 ? 14 : handle === 'n' || handle === 's' ? 6 : 22,
+                borderRadius: 1,
+                bgcolor: '#fff',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
+              },
+            }}
+          />
+        ))}
+      </Box>
     </Box>
   );
 }
@@ -667,6 +938,7 @@ function MediaDock() {
 
   const moved = state.placement === 'overlay' && (state.offsets.top !== DEFAULT_OFFSETS.top || state.offsets.bottom !== DEFAULT_OFFSETS.bottom);
   const KindIcon = media.kind === 'video' ? MovieRoundedIcon : ImageRoundedIcon;
+  const croppedSize = cropPixels(state.crop, media.width, media.height);
 
   return (
     <StageDock>
@@ -676,7 +948,7 @@ function MediaDock() {
           {media.name}
         </Typography>
         <Typography sx={{ fontFamily: MONO_FONT, fontSize: '0.75rem', color: 'text.secondary' }}>
-          {media.width}×{media.height}
+          {croppedSize.w}×{croppedSize.h}
         </Typography>
       </Box>
       {video && (

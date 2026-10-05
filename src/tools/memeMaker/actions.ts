@@ -4,7 +4,7 @@ import { assetUrl } from '../../lib/assetUrl';
 import type { NotificationType } from '../../components/NotificationProvider';
 import { canvasToPng, copyPng, downloadBlob, extensionFor, recordVideo } from '../../lib/meme/export.ts';
 import { canvasToGif, GIF_MAX_DURATION, recordGif } from '../../lib/meme/gif.ts';
-import { baseName, loadIconFile, loadMediaFile, loadMediaUrl } from '../../lib/meme/media.ts';
+import { baseName, loadIconFile, loadMediaFile, loadMediaUrl, trimSpan } from '../../lib/meme/media.ts';
 import type { IconAtlas, MediaAsset } from '../../lib/meme/types.ts';
 import type { EditorAction, EditorState } from './editor';
 
@@ -31,9 +31,11 @@ export function useEditorActions(options: {
   setMedia: (media: MediaAsset | null) => void;
   atlas: IconAtlas;
   canvasRef: RefObject<HTMLCanvasElement | null>;
+  /** The main canvas shows the uncropped crop editor while this is set, so it can't be exported. */
+  croppingRef: RefObject<boolean>;
   notify: Notify;
 }): EditorActions {
-  const { stateRef, dispatch, setMedia, atlas, canvasRef, notify } = options;
+  const { stateRef, dispatch, setMedia, atlas, canvasRef, croppingRef, notify } = options;
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const atlasRef = useRef(atlas);
@@ -72,9 +74,9 @@ export function useEditorActions(options: {
   );
 
   const exportMedia = useCallback(async () => {
-    const { media, exporting } = stateRef.current;
+    const { media, trim, exporting } = stateRef.current;
     const canvas = canvasRef.current;
-    if (!media || !canvas || exporting) return;
+    if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
 
     if (media.kind === 'image') {
@@ -94,6 +96,7 @@ export function useEditorActions(options: {
       const blob = await recordVideo({
         canvas,
         video: media.source as HTMLVideoElement,
+        ...trimSpan(media, trim),
         signal: controller.signal,
         onProgress: (value) => dispatch({ type: 'exporting', exporting: { kind: 'video', progress: value } }),
       });
@@ -109,12 +112,12 @@ export function useEditorActions(options: {
       abortRef.current = null;
       dispatch({ type: 'exporting', exporting: null });
     }
-  }, [stateRef, canvasRef, dispatch, notify]);
+  }, [stateRef, canvasRef, croppingRef, dispatch, notify]);
 
   const exportGif = useCallback(async () => {
-    const { media, placement, captions, offsets, styles, exporting } = stateRef.current;
+    const { media, crop, trim, placement, captions, offsets, styles, exporting } = stateRef.current;
     const canvas = canvasRef.current;
-    if (!media || !canvas || exporting) return;
+    if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
 
     if (media.kind === 'image') {
@@ -142,8 +145,10 @@ export function useEditorActions(options: {
           offsets,
           style: styles[placement],
           icons: atlasRef.current,
+          crop,
         },
         video: media.source as HTMLVideoElement,
+        ...trimSpan(media, trim),
         signal: controller.signal,
         onProgress: (progress) => dispatch({ type: 'exporting', exporting: { kind: 'gif', progress } }),
       });
@@ -159,18 +164,18 @@ export function useEditorActions(options: {
       abortRef.current = null;
       dispatch({ type: 'exporting', exporting: null });
     }
-  }, [stateRef, canvasRef, dispatch, notify]);
+  }, [stateRef, canvasRef, croppingRef, dispatch, notify]);
 
   const copyImage = useCallback(async () => {
     const canvas = canvasRef.current;
-    if (!canvas || stateRef.current.media?.kind !== 'image') return;
+    if (!canvas || stateRef.current.media?.kind !== 'image' || croppingRef.current) return;
     try {
       await copyPng(canvas);
       notify('Copied to clipboard', 'success');
     } catch {
       notify('Your browser blocked clipboard access. Use Export instead.', 'error');
     }
-  }, [stateRef, canvasRef, notify]);
+  }, [stateRef, canvasRef, croppingRef, notify]);
 
   const cancelExport = useCallback(() => abortRef.current?.abort(), []);
 

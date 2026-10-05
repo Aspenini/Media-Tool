@@ -13,6 +13,8 @@ export interface MediaAsset {
   name: string;
   width: number;
   height: number;
+  /** Seconds; 0 for stills. Can be Infinity for a stream whose length never resolved. */
+  duration: number;
   /** Blob URL owned by this asset (revoked on dispose), or a static URL. */
   url: string;
 }
@@ -48,4 +50,10 @@ export interface Rect {
 export interface IconAtlas {
   get(id: string): HTMLImageElement | undefined;
   has(id: string): boolean;
+}
+
+/** In/out points on a video, in seconds. */
+export interface Trim {
+  start: number;
+  end: number;
 }

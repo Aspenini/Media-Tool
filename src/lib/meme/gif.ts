@@ -386,6 +386,9 @@ export async function canvasToGif(canvas: HTMLCanvasElement): Promise<Blob> {
 export interface RecordGifOptions {
   scene: Scene;
   video: HTMLVideoElement;
+  /** In/out points in seconds; defaults to the whole clip. */
+  start?: number;
+  end?: number;
   signal: AbortSignal;
   onProgress: (progress: number) => void;
 }
@@ -412,9 +415,10 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
  * Seeks through the clip, paints each sampled frame with captions, then encodes
  * a dithered, downscaled GIF. Resolves with the blob, or null if aborted.
  */
-export async function recordGif({ scene, video, signal, onProgress }: RecordGifOptions): Promise<{ blob: Blob; truncated: boolean } | null> {
+export async function recordGif({ scene, video, start = 0, end, signal, onProgress }: RecordGifOptions): Promise<{ blob: Blob; truncated: boolean } | null> {
   const raw = video.duration;
-  const duration = Number.isFinite(raw) && raw > 0 ? raw : GIF_MAX_DURATION;
+  const clipEnd = end ?? (Number.isFinite(raw) && raw > 0 ? raw : start + GIF_MAX_DURATION);
+  const duration = Math.max(0.1, clipEnd - start);
   const truncated = duration > GIF_MAX_DURATION + 0.05;
   const clip = Math.min(duration, GIF_MAX_DURATION);
   const delayCs = Math.max(2, Math.round(100 / GIF_FPS));
@@ -432,7 +436,7 @@ export async function recordGif({ scene, video, signal, onProgress }: RecordGifO
   video.pause();
 
   try {
-    await seekVideo(video, 0);
+    await seekVideo(video, start);
     if (signal.aborted) return null;
     renderScene(work, ctx, scene);
     const first = readFrame(work, GIF_MAX_EDGE.video);
@@ -443,7 +447,7 @@ export async function recordGif({ scene, video, signal, onProgress }: RecordGifO
 
     for (let i = 1; i < frameCount; i++) {
       if (signal.aborted) return null;
-      const t = Math.min((i / fps), clip - 0.001);
+      const t = start + Math.min(i / fps, clip - 0.001);
       await seekVideo(video, t);
       if (signal.aborted) return null;
       renderScene(work, ctx, scene);

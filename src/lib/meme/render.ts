@@ -1,3 +1,4 @@
+import { cropPixels } from "./crop.ts";
 import { fontById, fontSpec } from "./fonts.ts";
 import { layoutText, type TextBlock } from "./layout.ts";
 import type { CaptionSlot, IconAtlas, MediaAsset, Placement, Rect, TextStyle } from "./types.ts";
@@ -13,6 +14,10 @@ export interface Scene {
   offsets: Record<CaptionSlot, number>;
   style: TextStyle;
   icons: IconAtlas;
+  /** Normalised source crop; null for the full frame. */
+  crop: Rect | null;
+  /** Draw only the uncropped media, no captions or bar — the crop editor's view. */
+  bare?: boolean;
 }
 
 export interface Frame {
@@ -23,11 +28,11 @@ export interface Frame {
   boxes: Partial<Record<CaptionSlot, Rect>>;
 }
 
-function outputSize(media: MediaAsset): { width: number; height: number } {
-  const scale = Math.min(1, MAX_EDGE[media.kind] / Math.max(media.width, media.height));
+function outputSize(media: MediaAsset, source: Rect): { width: number; height: number } {
+  const scale = Math.min(1, MAX_EDGE[media.kind] / Math.max(source.w, source.h));
   return {
-    width: Math.max(1, Math.round(media.width * scale)),
-    height: Math.max(1, Math.round(media.height * scale)),
+    width: Math.max(1, Math.round(source.w * scale)),
+    height: Math.max(1, Math.round(source.h * scale)),
   };
 }
 
@@ -83,7 +88,8 @@ function drawBlock(
 
 export function renderScene(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, scene: Scene): Frame {
   const { media, style, icons } = scene;
-  const { width, height } = outputSize(media);
+  const source = cropPixels(scene.bare ? null : scene.crop, media.width, media.height);
+  const { width, height } = outputSize(media, source);
   const fontSize = Math.max(14, width * (style.sizePct / 100));
   const padX = width * 0.05;
 
@@ -99,7 +105,7 @@ export function renderScene(canvas: HTMLCanvasElement, ctx: CanvasRenderingConte
       icons,
     });
 
-  const bar = scene.placement === "bar" ? layout(scene.captions.top) : null;
+  const bar = scene.placement === "bar" && !scene.bare ? layout(scene.captions.top) : null;
   const barPad = fontSize * 0.55;
   const barHeight = bar ? Math.round(bar.height + barPad * 2) : 0;
   const frame: Frame = {
@@ -112,7 +118,8 @@ export function renderScene(canvas: HTMLCanvasElement, ctx: CanvasRenderingConte
   if (canvas.width !== frame.width) canvas.width = frame.width;
   if (canvas.height !== frame.height) canvas.height = frame.height;
   ctx.clearRect(0, 0, frame.width, frame.height);
-  ctx.drawImage(media.source, 0, barHeight, width, height);
+  ctx.drawImage(media.source, source.x, source.y, source.w, source.h, 0, barHeight, width, height);
+  if (scene.bare) return frame;
 
   if (bar) {
     ctx.fillStyle = BAR_COLOR;
@@ -139,7 +146,7 @@ export function renderScene(canvas: HTMLCanvasElement, ctx: CanvasRenderingConte
 }
 
 export function sameFrame(a: Frame | null, b: Frame): boolean {
-  if (!a || a.width !== b.width || a.height !== b.height) return false;
+  if (!a || a.width !== b.width || a.height !== b.height || a.media.y !== b.media.y) return false;
   const rect = (r?: Rect) => (r ? `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}` : "");
   return rect(a.boxes.top) === rect(b.boxes.top) && rect(a.boxes.bottom) === rect(b.boxes.bottom);
 }
