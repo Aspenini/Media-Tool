@@ -44,7 +44,7 @@ import { ChoiceCard, ColorField, Segmented, SliderField, SwitchRow, type Segment
 import { TrimTimeline } from '../../components/TrimTimeline';
 import { audioSpan, loopExtends, outputDuration, soundtrackSync, videoPassCount, videoWrapped } from '../../lib/meme/audio.ts';
 import { cropPixels, dragCrop, fitAspect, FULL_CROP, isFullCrop, type CropHandle } from '../../lib/meme/crop.ts';
-import { trimSpan } from '../../lib/meme/media.ts';
+import { playableSource, trimSpan } from '../../lib/meme/media.ts';
 import { clampRange, formatTimecode } from '../../lib/videoTrim';
 import { canCopyImage } from '../../lib/meme/export.ts';
 import { FONTS } from '../../lib/meme/fonts.ts';
@@ -92,6 +92,7 @@ function Studio() {
   useTrimLoop();
   usePlaybackSpeed();
   useSoundtrack();
+  useStillSoundtrack();
   const { state, busy, openFile } = useEditor();
   return (
     <Workbench panelWidth={360}>
@@ -153,7 +154,7 @@ function useTrimLoop() {
   const { state, busy } = useEditor();
   const { media, trim } = state;
   useEffect(() => {
-    const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+    const video = playableSource(media);
     const span = media && trimSpan(media, trim);
     // Untrimmed clips use the element's own loop; exports drive playback themselves.
     if (!video || !span || !trim || busy) return;
@@ -185,8 +186,8 @@ function usePlaybackSpeed() {
   const { state } = useEditor();
   const { media, speed, keepPitch } = state;
   useEffect(() => {
-    if (!(media?.source instanceof HTMLVideoElement)) return;
-    const video = media.source;
+    const video = playableSource(media);
+    if (!video) return;
     video.defaultPlaybackRate = speed;
     video.playbackRate = speed;
     video.preservesPitch = keepPitch;
@@ -204,13 +205,13 @@ function useSoundtrack() {
   params.current = state;
 
   useEffect(() => {
-    const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+    const video = playableSource(media);
     if (!video || busy) return;
     video.muted = previewMuted || Boolean(audio && replaceAudio);
   }, [media, audio, replaceAudio, previewMuted, busy]);
 
   useEffect(() => {
-    const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+    const video = playableSource(media);
     const sound = audio?.element;
     if (!media || !video || !sound || busy) return;
 
@@ -350,7 +351,53 @@ function useSoundtrack() {
   }, [media, audio, busy]);
 }
 
-function useVideoTime(media: HTMLMediaElement | null): number {
+/**
+ * A still has no clock for its soundtrack to follow, so the preview loops the trimmed
+ * span on its own, played and paused from the dock. Export takes over while `busy` is set.
+ */
+function useStillSoundtrack() {
+  const { state, busy } = useEditor();
+  const { media, audio } = state;
+  const params = useRef(state);
+  params.current = state;
+
+  useEffect(() => {
+    const sound = audio?.element;
+    if (!media || playableSource(media) || !audio || !sound || busy) return;
+    sound.loop = false;
+    const span = () => audioSpan(audio.duration, params.current.audioTrim);
+    const check = () => {
+      const current = params.current;
+      if (sound.playbackRate !== current.audioSpeed) sound.playbackRate = current.audioSpeed;
+      // After the rate: assigning playbackRate can reset preservesPitch.
+      if (sound.preservesPitch !== current.audioKeepPitch) sound.preservesPitch = current.audioKeepPitch;
+      if (sound.volume !== current.audioVolume) sound.volume = current.audioVolume;
+      if (sound.muted !== current.previewMuted) sound.muted = current.previewMuted;
+      const { start, end } = span();
+      const t = sound.currentTime;
+      if (!sound.paused && !sound.seeking && (t >= end - 0.01 || t < start - 0.05)) sound.currentTime = start;
+    };
+    const onEnded = () => {
+      sound.currentTime = span().start;
+      void sound.play().catch(() => undefined);
+    };
+    // Every frame for a tight loop; `timeupdate` covers background tabs where frames stop.
+    let raf = requestAnimationFrame(function tick() {
+      check();
+      raf = requestAnimationFrame(tick);
+    });
+    sound.addEventListener('timeupdate', check);
+    sound.addEventListener('ended', onEnded);
+    return () => {
+      cancelAnimationFrame(raf);
+      sound.removeEventListener('timeupdate', check);
+      sound.removeEventListener('ended', onEnded);
+      sound.pause();
+    };
+  }, [media, audio, busy]);
+}
+
+function useVideoTime(media: { currentTime: number } | null): number {
   const [time, setTime] = useState(0);
   useEffect(() => {
     if (!media) return;
@@ -379,7 +426,7 @@ function Controls() {
       footer={
         <ExportFooter
           primary={{
-            label: media?.kind === 'video' ? 'Export video' : 'Export PNG',
+            label: media?.kind === 'video' || state.audio ? 'Export video' : 'Export PNG',
             icon: <DownloadRoundedIcon />,
             busy: videoBusy,
             busyLabel: 'Recording…',
@@ -409,7 +456,15 @@ function Controls() {
               disabled: locked,
             }
           }
-          status={cropping ? 'Finish cropping to export.' : media?.kind === 'video' ? 'GIFs are 10 fps, up to 10 seconds, scaled to 480px and dithered.' : undefined}
+          status={
+            cropping
+              ? 'Finish cropping to export.'
+              : media?.kind === 'video'
+                ? 'GIFs are 10 fps, up to 10 seconds, scaled to 480px and dithered.'
+                : media && state.audio
+                  ? 'The video holds this picture for the soundtrack. GIF and copy leave the audio out.'
+                  : undefined
+          }
         />
         }
     >
@@ -419,14 +474,14 @@ function Controls() {
           <FileDropZone
             accept={MEDIA_ACCEPT}
             title={media ? media.name : 'Choose a photo or clip'}
-            hint={media ? `${media.width} × ${media.height} · ${media.kind}` : `Or drop, or paste with ${MOD}+V`}
+            hint={media ? `${media.width} × ${media.height} · ${media.animated ? 'animation' : media.kind}` : `Or drop, or paste with ${MOD}+V`}
             onFiles={(files) => void openFile(files[0])}
           />
         </PanelSection>
         {media && <CropSection />}
         {media?.kind === 'video' && <TrimSection />}
         {media?.kind === 'video' && <SpeedSection />}
-        {media?.kind === 'video' && <SoundtrackSection />}
+        {media && <SoundtrackSection />}
         {media && <GoldfishSection />}
         <CaptionSection />
         <IconSection />
@@ -482,7 +537,7 @@ function CropSection() {
 function TrimSection() {
   const { state, dispatch, busy } = useEditor();
   const media = state.media;
-  const video = media?.source instanceof HTMLVideoElement ? media.source : null;
+  const video = playableSource(media);
   // Hold the playhead during export: re-rendering the timeline every frame starves the stage.
   const currentTime = useVideoTime(busy ? null : video);
   const span = media && trimSpan(media, state.trim);
@@ -557,6 +612,7 @@ function SoundtrackTimeline({
   speed,
   videoHeard,
   loopVideo,
+  still,
   busy,
   onScrub,
   onChangeRange,
@@ -567,6 +623,8 @@ function SoundtrackTimeline({
   speed: number;
   videoHeard: number | null;
   loopVideo: boolean;
+  /** Under a still picture, which simply holds for as long as the track plays. */
+  still: boolean;
   busy: boolean;
   onScrub: () => void;
   onChangeRange: (start: number, end: number) => void;
@@ -597,7 +655,9 @@ function SoundtrackTimeline({
         {formatTimecode(span.start)} → {formatTimecode(span.end)} · {formatTimecode(heard)} heard
       </Typography>
       <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-        {tail > 0
+        {still
+          ? `The picture holds for all ${formatTimecode(heard)}.`
+          : tail > 0
           ? `Starts with the clip, then silence for the last ${formatTimecode(tail)}.`
           : overrun > 0
             ? loopVideo
@@ -613,7 +673,8 @@ function SoundtrackSection() {
   const { state, dispatch, busy, addAudioFile, clearAudio } = useEditor();
   const { media, audio, audioSpeed, audioKeepPitch, audioVolume, replaceAudio, loopVideo, previewMuted } = state;
   const element = audio?.element ?? null;
-  if (!media || media.kind !== 'video') return null;
+  if (!media) return null;
+  const still = !playableSource(media);
 
   if (!audio || !element) {
     return (
@@ -622,7 +683,11 @@ function SoundtrackSection() {
           accept={AUDIO_ACCEPT}
           icon={AudiotrackRoundedIcon}
           title="Add an audio file"
-          hint="MP3, WAV, M4A, OGG or FLAC. Trim it, then speed it up or slow it down."
+          hint={
+            still
+              ? 'MP3, WAV, M4A, OGG or FLAC. Exports as a video that holds this picture for the track.'
+              : 'MP3, WAV, M4A, OGG or FLAC. Trim it, then speed it up or slow it down.'
+          }
           onFiles={(files) => void addAudioFile(files[0])}
         />
       </PanelSection>
@@ -644,7 +709,7 @@ function SoundtrackSection() {
       ? `On — the picture plays ${passes} times, then both start over.`
       : 'On — the soundtrack fits in one pass.';
   const pauseClip = () => {
-    if (media.source instanceof HTMLVideoElement) media.source.pause();
+    playableSource(media)?.pause();
   };
 
   return (
@@ -677,6 +742,7 @@ function SoundtrackSection() {
         speed={audioSpeed}
         videoHeard={videoHeard}
         loopVideo={loopVideo && extendsClip}
+        still={still}
         busy={busy}
         onScrub={pauseClip}
         onChangeRange={(start, end) => {
@@ -688,19 +754,23 @@ function SoundtrackSection() {
           element.currentTime = Math.min(Math.max(0, edge), audio.duration);
         }}
       />
-      <Button
-        fullWidth
-        size="large"
-        variant={loopVideo ? 'contained' : 'outlined'}
-        startIcon={<RepeatRoundedIcon />}
-        onClick={() => dispatch({ type: 'loopVideo', loopVideo: !loopVideo })}
-        aria-pressed={loopVideo}
-      >
-        Loop video until audio finishes
-      </Button>
-      <Typography variant="caption" color="text.secondary" sx={{ mt: -0.75 }}>
-        {loopCaption}
-      </Typography>
+      {!still && (
+        <>
+          <Button
+            fullWidth
+            size="large"
+            variant={loopVideo ? 'contained' : 'outlined'}
+            startIcon={<RepeatRoundedIcon />}
+            onClick={() => dispatch({ type: 'loopVideo', loopVideo: !loopVideo })}
+            aria-pressed={loopVideo}
+          >
+            Loop video until audio finishes
+          </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -0.75 }}>
+            {loopCaption}
+          </Typography>
+        </>
+      )}
       <SliderField
         label="Speed"
         aria-label="Soundtrack speed"
@@ -724,16 +794,25 @@ function SoundtrackSection() {
         format={(value) => `${Math.round(value * 100)}%`}
         onChange={(next) => dispatch({ type: 'audioVolume', volume: next })}
       />
-      <SwitchRow
-        label="Replace the clip's audio"
-        hint="Mute the video's own soundtrack."
-        checked={replaceAudio}
-        onChange={(next) => dispatch({ type: 'replaceAudio', replaceAudio: next })}
-      />
-      {previewMuted && (
+      {/* Stills and animations have no audio of their own to replace. */}
+      {!still && !media.animated && (
+        <SwitchRow
+          label="Replace the clip's audio"
+          hint="Mute the video's own soundtrack."
+          checked={replaceAudio}
+          onChange={(next) => dispatch({ type: 'replaceAudio', replaceAudio: next })}
+        />
+      )}
+      {previewMuted ? (
         <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
           The preview is muted. Unmute it on the picture to hear this track.
         </Typography>
+      ) : (
+        still && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+            Play and pause it from the bar under the picture.
+          </Typography>
+        )
       )}
     </PanelSection>
   );
@@ -976,8 +1055,8 @@ function Preview() {
   // Painting on every display refresh instead beats against the clip's frame rate
   // and the capture rate, so exports repeat and drop frames unevenly.
   useEffect(() => {
-    if (media?.kind !== 'video') return;
-    const video = media.source as HTMLVideoElement;
+    const video = playableSource(media);
+    if (!video) return;
     if (typeof video.requestVideoFrameCallback === 'function') {
       let lastFrame = -Infinity;
       let paintedTime = Number.NaN;
@@ -992,10 +1071,14 @@ function Preview() {
       });
       // The source element isn't in the DOM, and not every browser presents frames for it.
       // Catch moves the callback missed (or never sends), without repainting a still frame.
-      let watch = requestAnimationFrame(function tick(now) {
-        if (now - lastFrame > 200 && video.currentTime !== paintedTime) paint();
-        watch = requestAnimationFrame(tick);
-      });
+      // Animations present their own frames, and their clock moves between them, so they skip this.
+      let watch = 0;
+      if (video instanceof HTMLVideoElement) {
+        watch = requestAnimationFrame(function tick(now) {
+          if (now - lastFrame > 200 && video.currentTime !== paintedTime) paint();
+          watch = requestAnimationFrame(tick);
+        });
+      }
       return () => {
         video.cancelVideoFrameCallback(handle);
         cancelAnimationFrame(watch);
@@ -1077,7 +1160,7 @@ function Preview() {
           })}
         </Box>
       )}
-      {state.exporting && media.kind === 'video' && <ExportOverlay kind={state.exporting.kind} progress={state.exporting.progress} />}
+      {state.exporting && (media.kind === 'video' || state.exporting.kind === 'video') && <ExportOverlay kind={state.exporting.kind} progress={state.exporting.progress} />}
       {loading && (
         <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
           <CircularProgress />
@@ -1294,6 +1377,7 @@ function CaptionHandle({
 }
 
 function videoExportNote(state: EditorState): string {
+  if (state.media?.kind === 'image' && state.audio) return 'The soundtrack plays through once while the picture holds. Keep this tab in front.';
   const media = state.media?.kind === 'video' ? state.media : null;
   const span = media ? trimSpan(media, state.trim) : null;
   const videoOut = span ? outputDuration(span.start, span.end, state.speed) : 0;
@@ -1392,7 +1476,7 @@ function EmptyState() {
  * Media dock
  * ------------------------------------------------------------------ */
 
-function useVideoFlags(video: HTMLVideoElement | null) {
+function useVideoFlags(video: (EventTarget & { paused: boolean; muted: boolean }) | null) {
   const [flags, setFlags] = useState({ paused: true, muted: true });
   useEffect(() => {
     if (!video) return;
@@ -1410,13 +1494,15 @@ function useVideoFlags(video: HTMLVideoElement | null) {
 function MediaDock() {
   const { state, busy, setMedia, dispatch, openFile } = useEditor();
   const media = state.media;
-  const video = media?.source instanceof HTMLVideoElement ? media.source : null;
-  const { paused } = useVideoFlags(video);
+  const video = playableSource(media);
+  // A still with a soundtrack gets the same controls, driving the track instead.
+  const player = video ?? (media && state.audio ? state.audio.element : null);
+  const { paused } = useVideoFlags(player);
   const muted = state.previewMuted;
   if (!media) return null;
 
   const moved = state.placement === 'overlay' && (state.offsets.top !== DEFAULT_OFFSETS.top || state.offsets.bottom !== DEFAULT_OFFSETS.bottom);
-  const KindIcon = media.kind === 'video' ? MovieRoundedIcon : ImageRoundedIcon;
+  const KindIcon = media.animated ? GifBoxRoundedIcon : media.kind === 'video' ? MovieRoundedIcon : ImageRoundedIcon;
   const croppedSize = cropPixels(state.crop, media.width, media.height);
 
   return (
@@ -1430,11 +1516,16 @@ function MediaDock() {
           {croppedSize.w}×{croppedSize.h}
         </Typography>
       </Box>
-      {video && (
+      {player && (
         <>
           <Tooltip title={paused ? 'Play' : 'Pause'}>
             <span>
-              <IconButton size="small" disabled={busy} onClick={() => (paused ? void video.play() : video.pause())} aria-label={paused ? 'Play' : 'Pause'}>
+              <IconButton
+                size="small"
+                disabled={busy}
+                onClick={() => (paused ? void player.play().catch(() => undefined) : player.pause())}
+                aria-label={paused ? 'Play' : 'Pause'}
+              >
                 {paused ? <PlayArrowRoundedIcon fontSize="small" /> : <PauseRoundedIcon fontSize="small" />}
               </IconButton>
             </span>

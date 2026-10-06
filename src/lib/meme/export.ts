@@ -1,4 +1,5 @@
 import { compositionDuration, loopExtends, outputDuration } from "./audio.ts";
+import type { PlayableSource } from "./types.ts";
 import { getAudioContextClass } from "../spatial.ts";
 
 export { downloadBlob } from "../download.ts";
@@ -53,7 +54,7 @@ export interface RecordSoundtrack {
 
 export interface RecordOptions {
   canvas: HTMLCanvasElement;
-  video: HTMLVideoElement;
+  video: PlayableSource;
   /** In/out points in seconds; defaults to the whole clip. */
   start?: number;
   end?: number;
@@ -72,8 +73,9 @@ export interface RecordOptions {
   signal: AbortSignal;
 }
 
-function captureMedia(element: HTMLMediaElement): MediaStream | null {
-  const node = element as HTMLMediaElement & {
+/** The element's playing audio as a stream. Null for sources with no sound of their own, like animations. */
+function captureMedia(element: object): MediaStream | null {
+  const node = element as {
     captureStream?: () => MediaStream;
     mozCaptureStream?: () => MediaStream;
   };
@@ -84,7 +86,7 @@ function captureMedia(element: HTMLMediaElement): MediaStream | null {
   }
 }
 
-function seekMedia(element: HTMLMediaElement, time: number): Promise<void> {
+function seekMedia(element: PlayableSource | HTMLAudioElement, time: number): Promise<void> {
   const t = Math.max(0, time);
   if (Math.abs(element.currentTime - t) < 0.001 && !element.seeking) return Promise.resolve();
   return new Promise((resolve) => {
@@ -132,7 +134,7 @@ interface SoundtrackGraph {
  */
 async function connectSoundtrack(
   stream: MediaStream,
-  video: HTMLVideoElement,
+  video: PlayableSource | null,
   exportAudio: HTMLAudioElement,
   track: RecordSoundtrack,
   ctx: AudioContext,
@@ -150,7 +152,7 @@ async function connectSoundtrack(
   };
 
   try {
-    if (!track.replace) {
+    if (!track.replace && video) {
       const tracks = captureMedia(video)?.getAudioTracks() ?? [];
       if (tracks.length) {
         const src = ctx.createMediaStreamSource(new MediaStream(tracks));
@@ -206,6 +208,39 @@ async function connectSoundtrack(
   }
 }
 
+const HIDDEN_TAB_MESSAGE = "Export stopped because the tab went to the background. Keep it in front while recording.";
+
+/**
+ * Calls `onHidden` when the tab goes to the background. The stage stops repainting there,
+ * so recording on would capture a frozen picture under running audio. Returns the unsubscribe.
+ */
+function whenTabHidden(onHidden: () => void): () => void {
+  const check = () => {
+    if (document.hidden) onHidden();
+  };
+  document.addEventListener("visibilitychange", check);
+  return () => document.removeEventListener("visibilitychange", check);
+}
+
+function createRecorder(stream: MediaStream, mimeType: string) {
+  const recorder = new MediaRecorder(stream, {
+    ...(mimeType ? { mimeType } : {}),
+    videoBitsPerSecond: 8_000_000,
+  });
+  const chunks: Blob[] = [];
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
+  });
+  const stopped = new Promise<void>((resolve, reject) => {
+    recorder.addEventListener("stop", () => resolve(), { once: true });
+    recorder.addEventListener("error", () => reject(new Error("Recording failed.")), { once: true });
+  });
+  // Observed later via `await`; this just keeps an early failure from going unhandled.
+  stopped.catch(() => undefined);
+  const blob = () => new Blob(chunks, { type: recorder.mimeType || mimeType || "video/webm" });
+  return { recorder, stopped, blob };
+}
+
 /**
  * Plays the clip from its in-point while recording the canvas, which the stage keeps
  * repainting every animation frame. With `soundtrack.loopVideo` and a longer soundtrack,
@@ -224,6 +259,7 @@ export async function recordVideo({
   signal,
 }: RecordOptions): Promise<Blob | null> {
   if (!canRecordVideo()) throw new Error("This browser can't record canvas video. Try Chrome, Edge, or Firefox.");
+  if (document.hidden) throw new Error(HIDDEN_TAB_MESSAGE);
 
   const mimeType = pickRecorderMime();
   // A fixed capture rate resamples the repaints on its own clock, which repeats some
@@ -238,6 +274,7 @@ export async function recordVideo({
   };
 
   // Pause before unmuting, so a replaced-off mix doesn't blast the clip's audio early.
+  const wasPaused = video.paused;
   video.pause();
   const prevMuted = video.muted;
   const prevVolume = video.volume;
@@ -302,25 +339,17 @@ export async function recordVideo({
     return null;
   }
 
-  const recorder = new MediaRecorder(stream, {
-    ...(mimeType ? { mimeType } : {}),
-    videoBitsPerSecond: 8_000_000,
-  });
-  const chunks: Blob[] = [];
-  recorder.addEventListener("dataavailable", (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  });
-  const stopped = new Promise<void>((resolve, reject) => {
-    recorder.addEventListener("stop", () => resolve(), { once: true });
-    recorder.addEventListener("error", () => reject(new Error("Recording failed.")), { once: true });
-  });
-  // Observed below via `await`; this just keeps an early failure from going unhandled.
-  stopped.catch(() => undefined);
+  const { recorder, stopped, blob } = createRecorder(stream, mimeType);
   const stop = () => {
     if (recorder.state !== "inactive") recorder.stop();
     video.pause();
     exportAudio?.pause();
   };
+  let hidden = false;
+  const unwatchTab = whenTabHidden(() => {
+    hidden = true;
+    stop();
+  });
 
   const rate = Number.isFinite(speed) && speed > 0 ? speed : 1;
   const wasLooping = video.loop;
@@ -333,8 +362,7 @@ export async function recordVideo({
   video.defaultPlaybackRate = rate;
   video.playbackRate = rate;
   video.preservesPitch = keepPitch;
-  video.currentTime = start;
-  if (video.seeking) await new Promise((resolve) => video.addEventListener("seeked", resolve, { once: true }));
+  await seekMedia(video, start);
 
   const clipEnd = end ?? (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : start + 10);
   const span = Math.max(0.1, clipEnd - start);
@@ -403,6 +431,8 @@ export async function recordVideo({
   const safety = setTimeout(stop, total * 1000 + 3000);
 
   try {
+    // The tab can slip into the background during the setup awaits above.
+    if (document.hidden) throw new Error(HIDDEN_TAB_MESSAGE);
     recorder.start(250);
     watch = requestAnimationFrame(onFrame);
     try {
@@ -427,6 +457,7 @@ export async function recordVideo({
     video.removeEventListener("timeupdate", check);
     video.removeEventListener("ended", check);
     signal.removeEventListener("abort", stop);
+    unwatchTab();
     for (const track of stream.getTracks()) track.stop();
     graph?.close();
     closeMix();
@@ -437,12 +468,148 @@ export async function recordVideo({
     video.preservesPitch = prevPitch;
     video.muted = prevMuted;
     video.volume = prevVolume;
-    void video.play().catch(() => undefined);
+    // Leave the preview the way it was: a paused clip stays paused on its in-point.
+    if (!wasPaused) void video.play().catch(() => undefined);
   }
 
+  if (hidden) throw new Error(HIDDEN_TAB_MESSAGE);
   if (signal.aborted) return null;
   onProgress(1);
-  return new Blob(chunks, { type: recorder.mimeType || mimeType || "video/webm" });
+  return blob();
+}
+
+export interface RecordStillOptions {
+  canvas: HTMLCanvasElement;
+  soundtrack: RecordSoundtrack;
+  /** 0–1, reported as the soundtrack plays through. */
+  onProgress: (progress: number) => void;
+  signal: AbortSignal;
+}
+
+/** Frame rate for a held picture. Identical frames cost next to nothing to encode. */
+const STILL_FPS = 30;
+
+/**
+ * Records the canvas, holding whatever it shows, for as long as the trimmed soundtrack
+ * plays. Resolves with the encoded clip, or null if aborted.
+ */
+export async function recordStill({ canvas, soundtrack, onProgress, signal }: RecordStillOptions): Promise<Blob | null> {
+  if (!canRecordVideo()) throw new Error("This browser can't record canvas video. Try Chrome, Edge, or Firefox.");
+  if (document.hidden) throw new Error(HIDDEN_TAB_MESSAGE);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Couldn't read the picture for export.");
+
+  const track: RecordSoundtrack = { ...soundtrack, replace: true, loopVideo: false };
+  const mimeType = pickRecorderMime();
+  const stream = new MediaStream(canvas.captureStream(STILL_FPS).getVideoTracks());
+  // Built in the click turn, before any await, so the context is allowed to run.
+  const mixCtx = new (getAudioContextClass())();
+  if (mixCtx.state === "suspended") void mixCtx.resume();
+
+  let exportAudio: HTMLAudioElement | null = null;
+  let graph: SoundtrackGraph | null = null;
+  const release = () => {
+    graph?.close();
+    if (mixCtx.state !== "closed") void mixCtx.close();
+    if (exportAudio) {
+      exportAudio.pause();
+      exportAudio.removeAttribute("src");
+      exportAudio.load();
+      exportAudio = null;
+    }
+    for (const media of stream.getTracks()) media.stop();
+  };
+  try {
+    exportAudio = await openExportAudio(track);
+    graph = await connectSoundtrack(stream, null, exportAudio, track, mixCtx);
+  } catch (error) {
+    release();
+    throw error;
+  }
+  if (signal.aborted) {
+    release();
+    return null;
+  }
+
+  const { recorder, stopped, blob } = createRecorder(stream, mimeType);
+  const audio = exportAudio;
+  const mode = graph.mode;
+  const startBuffer = graph.startBuffer;
+  const stop = () => {
+    if (recorder.state !== "inactive") recorder.stop();
+    audio.pause();
+  };
+  let hidden = false;
+  const unwatchTab = whenTabHidden(() => {
+    hidden = true;
+    stop();
+  });
+
+  const rate = Number.isFinite(track.speed) && track.speed > 0 ? track.speed : 1;
+  const total = Math.max(0.1, outputDuration(track.start, track.end, rate));
+  let startedAt = Number.NaN;
+  let reported = -1;
+  const check = () => {
+    if (recorder.state === "inactive") return;
+    // The element's own clock when it's the source; wall time for the decoded-buffer fallback.
+    const outputT =
+      mode === "element"
+        ? Math.max(0, audio.currentTime - track.start) / rate
+        : Number.isFinite(startedAt)
+          ? (performance.now() - startedAt) / 1000
+          : 0;
+    const progress = Math.min(1, outputT / total);
+    if (progress - reported >= 0.005) {
+      reported = progress;
+      onProgress(progress);
+    }
+    if (outputT >= total - 0.01 || audio.ended) stop();
+  };
+  // Canvas capture only emits a frame when the canvas changes, and a held picture never does.
+  // Writing one pixel back unchanged marks it changed; putImageData skips compositing, so
+  // nothing shifts. Read once, since per-frame readbacks push the canvas off the GPU.
+  // On a timer rather than animation frames, which a covered or minimized window can stop.
+  const corner = ctx.getImageData(0, 0, 1, 1);
+  let pump: ReturnType<typeof setInterval> | undefined;
+  const onFrame = () => {
+    ctx.putImageData(corner, 0, 0);
+    check();
+  };
+  audio.addEventListener("timeupdate", check);
+  audio.addEventListener("ended", check);
+  signal.addEventListener("abort", stop, { once: true });
+  const safety = setTimeout(stop, total * 1000 + 3000);
+
+  try {
+    if (document.hidden) throw new Error(HIDDEN_TAB_MESSAGE);
+    recorder.start(250);
+    onFrame();
+    pump = setInterval(onFrame, 1000 / STILL_FPS);
+    startedAt = performance.now();
+    if (mode === "buffer") startBuffer();
+    else {
+      try {
+        await audio.play();
+      } catch {
+        throw new Error("Couldn't play the soundtrack. Click the preview and export again.");
+      }
+    }
+    await stopped;
+  } finally {
+    stop();
+    clearTimeout(safety);
+    clearInterval(pump);
+    audio.removeEventListener("timeupdate", check);
+    audio.removeEventListener("ended", check);
+    signal.removeEventListener("abort", stop);
+    unwatchTab();
+    release();
+  }
+
+  if (hidden) throw new Error(HIDDEN_TAB_MESSAGE);
+  if (signal.aborted) return null;
+  onProgress(1);
+  return blob();
 }
 
 export function extensionFor(blob: Blob): string {

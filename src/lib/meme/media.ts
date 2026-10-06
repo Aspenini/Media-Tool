@@ -1,6 +1,9 @@
-import type { InlineIcon, MediaAsset, Trim } from "./types.ts";
+import { animatedTypeFor, decodeAnimation, FramePlayer } from "./framePlayer.ts";
+import type { InlineIcon, MediaAsset, PlayableSource, Trim } from "./types.ts";
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)$/i;
+/** Matches the stage's video output cap; larger animation frames would only be scaled down again. */
+const ANIMATION_MAX_EDGE = 1920;
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|avif|bmp|svg)$/i;
 
 export function isSupportedFile(file: File): boolean {
@@ -77,6 +80,21 @@ export async function loadMediaFile(file: File): Promise<MediaAsset> {
         url,
       };
     }
+    const animatedType = animatedTypeFor(file);
+    const player = animatedType ? await decodeAnimation(file, animatedType, ANIMATION_MAX_EDGE) : null;
+    if (player) {
+      void player.play();
+      return {
+        kind: "video",
+        source: player,
+        animated: true,
+        name: file.name,
+        width: player.videoWidth,
+        height: player.videoHeight,
+        duration: player.duration,
+        url,
+      };
+    }
     const image = await decodeImage(url);
     return { kind: "image", source: image, name: file.name, width: image.naturalWidth, height: image.naturalHeight, duration: 0, url };
   } catch (error) {
@@ -90,7 +108,19 @@ export async function loadMediaUrl(url: string, name: string): Promise<MediaAsse
   return { kind: "image", source: image, name, width: image.naturalWidth, height: image.naturalHeight, duration: 0, url };
 }
 
+/** The playable source behind a clip or animation, or null for a still. */
+export function playableSource(media: MediaAsset | null | undefined): PlayableSource | null {
+  const source = media?.source;
+  return source instanceof HTMLVideoElement || source instanceof FramePlayer ? source : null;
+}
+
+/** What to draw for the media right now: the image, the video, or the animation's current frame. */
+export function drawableSource(media: MediaAsset): CanvasImageSource {
+  return media.source instanceof FramePlayer ? media.source.frame : media.source;
+}
+
 export function disposeMedia(media: MediaAsset): void {
+  if (media.source instanceof FramePlayer) media.source.close();
   if (media.source instanceof HTMLVideoElement) {
     media.source.pause();
     media.source.removeAttribute("src");

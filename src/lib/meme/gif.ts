@@ -1,6 +1,7 @@
 import { runOffThread } from "../offThread.ts";
 import { sourceTimeAt } from "./audio.ts";
 import { renderScene, type Scene } from "./render.ts";
+import type { PlayableSource } from "./types.ts";
 
 /** Longest edge for a still GIF. Video is smaller so the file stays shareable. */
 export const GIF_MAX_EDGE = { still: 1280, video: 480 } as const;
@@ -386,7 +387,7 @@ export async function canvasToGif(canvas: HTMLCanvasElement): Promise<Blob> {
 
 export interface RecordGifOptions {
   scene: Scene;
-  video: HTMLVideoElement;
+  video: PlayableSource;
   /** In/out points in seconds; defaults to the whole clip. */
   start?: number;
   end?: number;
@@ -398,7 +399,7 @@ export interface RecordGifOptions {
   onProgress: (progress: number) => void;
 }
 
-function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
+function seekVideo(video: PlayableSource, time: number): Promise<void> {
   const duration = Number.isFinite(video.duration) ? video.duration : time;
   const t = Math.min(Math.max(0, time), Math.max(0, duration - 0.001));
   if (Math.abs(video.currentTime - t) < 0.0005 && !video.seeking) return Promise.resolve();

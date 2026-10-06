@@ -3,9 +3,9 @@ import sampleUrl from '../../assets/meme-sample.jpg';
 import { assetUrl } from '../../lib/assetUrl';
 import type { NotificationType } from '../../components/NotificationProvider';
 import { audioSpan, disposeAudio, isAudioFile, loadAudioFile, loopExtends, outputDuration } from '../../lib/meme/audio.ts';
-import { canvasToPng, copyPng, downloadBlob, extensionFor, recordVideo } from '../../lib/meme/export.ts';
+import { canvasToPng, copyPng, downloadBlob, extensionFor, recordStill, recordVideo, type RecordSoundtrack } from '../../lib/meme/export.ts';
 import { canvasToGif, GIF_MAX_DURATION, recordGif } from '../../lib/meme/gif.ts';
-import { baseName, loadIconFile, loadMediaFile, loadMediaUrl, trimSpan } from '../../lib/meme/media.ts';
+import { baseName, loadIconFile, loadMediaFile, loadMediaUrl, playableSource, trimSpan } from '../../lib/meme/media.ts';
 import type { IconAtlas, MediaAsset } from '../../lib/meme/types.ts';
 import type { EditorAction, EditorState } from './editor';
 
@@ -81,8 +81,9 @@ export function useEditorActions(options: {
   const addAudioFile = useCallback(
     async (file: File) => {
       if (stateRef.current.exporting) return;
-      if (stateRef.current.media?.kind !== 'video') {
-        notify('Open a clip first, then add audio.', 'error');
+      const media = stateRef.current.media;
+      if (!media) {
+        notify('Open a photo or clip first, then add audio.', 'error');
         return;
       }
       if (!isAudioFile(file)) {
@@ -95,6 +96,8 @@ export function useEditorActions(options: {
         dispatch({ type: 'audio', audio: track });
         if (previous) disposeAudio(previous);
         notify(`Added ${track.name}`, 'success');
+        // A clip carries the soundtrack along as it plays. A still has nothing to follow, so start it here.
+        if (!playableSource(media) && !stateRef.current.previewMuted) void track.element.play().catch(() => undefined);
       } catch (error) {
         notify(message(error, "Couldn't open that audio."), 'error');
       }
@@ -152,7 +155,20 @@ export function useEditorActions(options: {
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
 
-    if (media.kind === 'image') {
+    const video = playableSource(media);
+    const soundtrack: RecordSoundtrack | undefined = audio
+      ? {
+          url: audio.url,
+          ...audioSpan(audio.duration, audioTrim),
+          speed: audioSpeed,
+          keepPitch: audioKeepPitch,
+          volume: audioVolume,
+          replace: replaceAudio,
+          loopVideo,
+        }
+      : undefined;
+
+    if (!video && !soundtrack) {
       try {
         downloadBlob(await canvasToPng(canvas), `${name}.png`);
         notify('PNG saved', 'success');
@@ -165,27 +181,22 @@ export function useEditorActions(options: {
     const controller = new AbortController();
     abortRef.current = controller;
     dispatch({ type: 'exporting', exporting: { kind: 'video', progress: 0 } });
+    const onProgress = (value: number) => dispatch({ type: 'exporting', exporting: { kind: 'video', progress: value } });
     try {
-      const blob = await recordVideo({
-        canvas,
-        video: media.source as HTMLVideoElement,
-        ...trimSpan(media, trim),
-        speed,
-        keepPitch,
-        soundtrack: audio
-          ? {
-              url: audio.url,
-              ...audioSpan(audio.duration, audioTrim),
-              speed: audioSpeed,
-              keepPitch: audioKeepPitch,
-              volume: audioVolume,
-              replace: replaceAudio,
-              loopVideo,
-            }
-          : undefined,
-        signal: controller.signal,
-        onProgress: (value) => dispatch({ type: 'exporting', exporting: { kind: 'video', progress: value } }),
-      });
+      const blob = video
+        ? await recordVideo({
+            canvas,
+            video,
+            ...trimSpan(media, trim),
+            speed,
+            keepPitch,
+            soundtrack,
+            signal: controller.signal,
+            onProgress,
+          })
+        : soundtrack
+          ? await recordStill({ canvas, soundtrack, signal: controller.signal, onProgress })
+          : null;
       if (blob) {
         downloadBlob(blob, `${name}.${extensionFor(blob)}`);
         notify(`${extensionFor(blob).toUpperCase()} saved`, 'success');
@@ -206,8 +217,9 @@ export function useEditorActions(options: {
     const canvas = canvasRef.current;
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
+    const video = playableSource(media);
 
-    if (media.kind === 'image') {
+    if (!video) {
       dispatch({ type: 'exporting', exporting: { kind: 'gif', progress: 0 } });
       try {
         downloadBlob(await canvasToGif(canvas), `${name}.gif`);
@@ -235,7 +247,7 @@ export function useEditorActions(options: {
           crop,
           goldfish,
         },
-        video: media.source as HTMLVideoElement,
+        video,
         ...trimSpan(media, trim),
         speed,
         coverSeconds: gifCoverSeconds(media, trim, speed, audio, audioTrim, audioSpeed, loopVideo),

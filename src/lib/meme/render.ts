@@ -2,6 +2,7 @@ import { cropPixels } from "./crop.ts";
 import { fontById, fontSpec } from "./fonts.ts";
 import { paintMedia } from "./goldfish.ts";
 import { layoutText, type TextBlock } from "./layout.ts";
+import { drawableSource, playableSource } from "./media.ts";
 import type { CaptionSlot, IconAtlas, MediaAsset, Placement, Rect, TextStyle } from "./types.ts";
 
 /** Longest output edge. Video is capped lower so MediaRecorder can keep up. */
@@ -124,10 +125,10 @@ export function renderScene(canvas: HTMLCanvasElement, ctx: CanvasRenderingConte
   if (canvas.height !== frame.height) canvas.height = frame.height;
   ctx.clearRect(0, 0, frame.width, frame.height);
   const graded = Boolean(scene.goldfish) && !scene.bare;
-  paintMedia(ctx, canvas, media.source, source.x, source.y, source.w, source.h, 0, barHeight, width, height, {
+  paintMedia(ctx, canvas, drawableSource(media), source.x, source.y, source.w, source.h, 0, barHeight, width, height, {
     goldfish: graded,
     smooth: graded && Boolean(scene.smoothMotion) && media.kind === "video",
-    time: media.source instanceof HTMLVideoElement ? media.source.currentTime : null,
+    time: playableSource(media)?.currentTime ?? null,
   });
   if (scene.bare) return frame;
 
