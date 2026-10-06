@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { audioSpan, audioTimeFor, isAudioFile, outputDuration, soundtrackSync } from '../meme/audio';
+import {
+  audioSpan,
+  audioTimeFor,
+  compositionDuration,
+  isAudioFile,
+  loopExtends,
+  outputDuration,
+  sourceTimeAt,
+  soundtrackSync,
+  videoPassCount,
+  videoWrapped,
+} from '../meme/audio';
 
 const file = (name: string, type = '') => new File(['x'], name, { type });
 
@@ -53,6 +64,45 @@ describe('outputDuration', () => {
   });
 });
 
+describe('compositionDuration', () => {
+  test('keeps the video length when looping is off or the audio fits', () => {
+    expect(compositionDuration(2, 5, false)).toBeCloseTo(2);
+    expect(compositionDuration(5, 2, true)).toBeCloseTo(5);
+    expect(loopExtends(5, 2)).toBe(false);
+  });
+
+  test('uses the soundtrack when the picture repeats to cover it', () => {
+    expect(loopExtends(2, 5)).toBe(true);
+    expect(compositionDuration(2, 5, true)).toBeCloseTo(5);
+    expect(videoPassCount(2, 5)).toBe(3);
+    expect(videoPassCount(2, 4)).toBe(2);
+    expect(videoPassCount(2, 2)).toBe(1);
+  });
+});
+
+describe('sourceTimeAt', () => {
+  test('wraps inside the trim while looping and clamps when not', () => {
+    expect(sourceTimeAt(2.5, 1, 3, 1, true)).toBeCloseTo(1.5);
+    expect(sourceTimeAt(2, 0, 2, 1, true)).toBeCloseTo(0);
+    expect(sourceTimeAt(2.5, 1, 3, 1, false)).toBeCloseTo(2.999);
+  });
+
+  test('a sped-up clip maps output time back onto the file', () => {
+    expect(sourceTimeAt(0.5, 1, 5, 2, true)).toBeCloseTo(2);
+  });
+});
+
+describe('videoWrapped', () => {
+  test('spots a jump from the out-point back to the in-point', () => {
+    expect(videoWrapped({ previous: 1.95, current: 0.02, start: 0, end: 2, paused: false })).toBe(true);
+  });
+
+  test('ignores a pause and a seek that does not land on the in-point', () => {
+    expect(videoWrapped({ previous: 1.95, current: 0.02, start: 0, end: 2, paused: true })).toBe(false);
+    expect(videoWrapped({ previous: 1.2, current: 0.4, start: 0, end: 2, paused: false })).toBe(false);
+  });
+});
+
 describe('audioSpan', () => {
   test('a missing trim is the whole file', () => {
     expect(audioSpan(8, null)).toEqual({ start: 0, end: 8 });
@@ -81,19 +131,60 @@ describe('soundtrackSync', () => {
   };
 
   test('plays when the playhead is close enough', () => {
-    expect(soundtrackSync(base)).toEqual({ pause: false, seek: null });
+    expect(soundtrackSync(base)).toEqual({ pause: false, seek: null, restart: false });
   });
 
   test('seeks when playback has drifted', () => {
-    expect(soundtrackSync({ ...base, audioTime: 2 })).toEqual({ pause: false, seek: 1 });
+    expect(soundtrackSync({ ...base, audioTime: 2 })).toEqual({ pause: false, seek: 1, restart: false });
   });
 
   test('pauses once the trim runs out', () => {
-    expect(soundtrackSync({ ...base, videoTime: 4, audioTime: 3.9 })).toEqual({ pause: true, seek: null });
+    expect(soundtrackSync({ ...base, videoTime: 4, audioTime: 3.9 })).toEqual({ pause: true, seek: null, restart: false });
   });
 
   test('while paused, ignores the audio playhead unless the video moved', () => {
-    expect(soundtrackSync({ ...base, videoPaused: true, videoMoved: false, audioTime: 3 })).toEqual({ pause: true, seek: null });
-    expect(soundtrackSync({ ...base, videoPaused: true, videoMoved: true, audioTime: 3 })).toEqual({ pause: true, seek: 1 });
+    expect(soundtrackSync({ ...base, videoPaused: true, videoMoved: false, audioTime: 3 })).toEqual({ pause: true, seek: null, restart: false });
+    expect(soundtrackSync({ ...base, videoPaused: true, videoMoved: true, audioTime: 3 })).toEqual({ pause: true, seek: 1, restart: false });
+  });
+
+  test('a repeated clip keeps the soundtrack moving through later passes', () => {
+    expect(
+      soundtrackSync({
+        ...base,
+        videoTime: 0.25,
+        audioTime: 2.25,
+        audioEnd: 5,
+        videoLoops: 1,
+        videoOut: 2,
+        loopVideo: true,
+      }),
+    ).toEqual({ pause: false, seek: null, restart: false });
+  });
+
+  test('looping off ignores completed passes and follows the picture', () => {
+    expect(
+      soundtrackSync({
+        ...base,
+        videoTime: 0.25,
+        audioTime: 2.25,
+        videoLoops: 1,
+        videoOut: 2,
+        loopVideo: false,
+      }),
+    ).toEqual({ pause: false, seek: 0.25, restart: false });
+  });
+
+  test('restarts both once the looped soundtrack reaches its end', () => {
+    expect(
+      soundtrackSync({
+        ...base,
+        videoTime: 1.2,
+        audioTime: 5,
+        audioEnd: 5,
+        videoLoops: 2,
+        videoOut: 2,
+        loopVideo: true,
+      }),
+    ).toEqual({ pause: false, seek: 0, restart: true });
   });
 });

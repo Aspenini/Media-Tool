@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type Dispatch, type RefObject } from 're
 import sampleUrl from '../../assets/meme-sample.jpg';
 import { assetUrl } from '../../lib/assetUrl';
 import type { NotificationType } from '../../components/NotificationProvider';
-import { audioSpan, disposeAudio, isAudioFile, loadAudioFile } from '../../lib/meme/audio.ts';
+import { audioSpan, disposeAudio, isAudioFile, loadAudioFile, loopExtends, outputDuration } from '../../lib/meme/audio.ts';
 import { canvasToPng, copyPng, downloadBlob, extensionFor, recordVideo } from '../../lib/meme/export.ts';
 import { canvasToGif, GIF_MAX_DURATION, recordGif } from '../../lib/meme/gif.ts';
 import { baseName, loadIconFile, loadMediaFile, loadMediaUrl, trimSpan } from '../../lib/meme/media.ts';
@@ -13,6 +13,25 @@ type Notify = (message: string, type?: NotificationType) => void;
 
 function message(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/** Output seconds a GIF should cover by repeating the clip, or undefined for one pass. */
+function gifCoverSeconds(
+  media: MediaAsset,
+  trim: EditorState['trim'],
+  speed: number,
+  audio: EditorState['audio'],
+  audioTrim: EditorState['audioTrim'],
+  audioSpeed: number,
+  loopVideo: boolean,
+): number | undefined {
+  if (!loopVideo || !audio || media.kind !== 'video') return undefined;
+  const videoSpan = trimSpan(media, trim);
+  if (!videoSpan) return undefined;
+  const soundtrack = audioSpan(audio.duration, audioTrim);
+  const videoOut = outputDuration(videoSpan.start, videoSpan.end, speed);
+  const audioOut = outputDuration(soundtrack.start, soundtrack.end, audioSpeed);
+  return loopExtends(videoOut, audioOut) ? audioOut : undefined;
 }
 
 export interface EditorActions {
@@ -115,8 +134,21 @@ export function useEditorActions(options: {
   );
 
   const exportMedia = useCallback(async () => {
-    const { media, trim, speed, keepPitch, audio, audioTrim, audioSpeed, audioKeepPitch, audioVolume, replaceAudio, goldfish, exporting } =
-      stateRef.current;
+    const {
+      media,
+      trim,
+      speed,
+      keepPitch,
+      audio,
+      audioTrim,
+      audioSpeed,
+      audioKeepPitch,
+      audioVolume,
+      replaceAudio,
+      loopVideo,
+      goldfish,
+      exporting,
+    } = stateRef.current;
     const canvas = canvasRef.current;
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
@@ -150,6 +182,7 @@ export function useEditorActions(options: {
               keepPitch: audioKeepPitch,
               volume: audioVolume,
               replace: replaceAudio,
+              loopVideo,
             }
           : undefined,
         signal: controller.signal,
@@ -170,7 +203,8 @@ export function useEditorActions(options: {
   }, [stateRef, canvasRef, croppingRef, dispatch, notify]);
 
   const exportGif = useCallback(async () => {
-    const { media, crop, trim, speed, placement, captions, offsets, styles, goldfish, exporting } = stateRef.current;
+    const { media, crop, trim, speed, placement, captions, offsets, styles, goldfish, exporting, audio, audioTrim, audioSpeed, loopVideo } =
+      stateRef.current;
     const canvas = canvasRef.current;
     if (!media || !canvas || exporting || croppingRef.current) return;
     const name = `${baseName(media.name)}-meme`;
@@ -206,6 +240,7 @@ export function useEditorActions(options: {
         video: media.source as HTMLVideoElement,
         ...trimSpan(media, trim),
         speed,
+        coverSeconds: gifCoverSeconds(media, trim, speed, audio, audioTrim, audioSpeed, loopVideo),
         signal: controller.signal,
         onProgress: (progress) => dispatch({ type: 'exporting', exporting: { kind: 'gif', progress } }),
       });

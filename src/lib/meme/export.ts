@@ -1,4 +1,4 @@
-import { audioTimeFor } from "./audio.ts";
+import { compositionDuration, loopExtends, outputDuration } from "./audio.ts";
 import { getAudioContextClass } from "../spatial.ts";
 
 export { downloadBlob } from "../download.ts";
@@ -47,6 +47,8 @@ export interface RecordSoundtrack {
   volume: number;
   /** Leave the clip's own audio out of the mix. */
   replace: boolean;
+  /** Repeat the clip until this soundtrack ends, when the soundtrack is longer. */
+  loopVideo?: boolean;
 }
 
 export interface RecordOptions {
@@ -202,8 +204,9 @@ async function connectSoundtrack(
 }
 
 /**
- * Plays the clip once from its in-point to its out-point while recording the canvas, which
- * the stage keeps repainting every animation frame. Resolves with the encoded clip, or null if aborted.
+ * Plays the clip from its in-point while recording the canvas, which the stage keeps
+ * repainting every animation frame. With `soundtrack.loopVideo` and a longer soundtrack,
+ * the picture repeats until that audio ends. Resolves with the encoded clip, or null if aborted.
  */
 export async function recordVideo({
   canvas,
@@ -330,17 +333,50 @@ export async function recordVideo({
 
   const clipEnd = end ?? (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : start + 10);
   const span = Math.max(0.1, clipEnd - start);
+  const videoOut = span / rate;
+  const audioOut = soundtrack ? outputDuration(soundtrack.start, soundtrack.end, soundtrack.speed) : 0;
+  const loopVideo = Boolean(soundtrack?.loopVideo) && loopExtends(videoOut, audioOut);
+  const total = Math.max(0.1, compositionDuration(videoOut, audioOut, loopVideo));
+  // Completed passes. While a seek back to the in-point is in flight, ignore the playhead
+  // still sitting on the out-point so the soundtrack clock doesn't jump ahead a pass.
+  let loops = 0;
+  let wrapping = false;
+  const outputNow = () => {
+    if (wrapping) return loops * videoOut;
+    const into = Math.min(videoOut, Math.max(0, (video.currentTime - start) / rate));
+    return loops * videoOut + into;
+  };
   const check = () => {
-    onProgress(Math.min(1, Math.max(0, (video.currentTime - start) / span)));
+    if (recorder.state === "inactive") return;
+    const outputT = outputNow();
+    onProgress(Math.min(1, Math.max(0, outputT / total)));
     if (exportAudio && graph?.mode === "element" && soundtrack) {
-      const expected = audioTimeFor(video.currentTime, start, rate, soundtrack.start, soundtrack.speed);
+      const audioRate = Number.isFinite(soundtrack.speed) && soundtrack.speed > 0 ? soundtrack.speed : 1;
+      const expected = soundtrack.start + outputT * audioRate;
       if (expected >= soundtrack.end - 0.03) {
         if (!exportAudio.paused) exportAudio.pause();
       } else if (!exportAudio.seeking && Math.abs(exportAudio.currentTime - expected) > 0.15) {
         exportAudio.currentTime = Math.min(expected, Math.max(soundtrack.start, soundtrack.end - 0.001));
       }
     }
-    if (video.currentTime >= clipEnd) stop();
+    if (wrapping) return;
+    const atEnd = video.ended || video.currentTime >= clipEnd;
+    if (!loopVideo && atEnd) {
+      stop();
+      return;
+    }
+    if (outputT >= total - 0.001) {
+      stop();
+      return;
+    }
+    if (loopVideo && atEnd) {
+      wrapping = true;
+      loops += 1;
+      void seekMedia(video, start).finally(() => {
+        wrapping = false;
+        if (recorder.state !== "inactive" && video.paused) void video.play().catch(() => undefined);
+      });
+    }
   };
   // Poll every display frame: `timeupdate` only fires ~4×/s, too coarse for an out-point,
   // but it keeps firing when animation frames are throttled in a background tab.
@@ -350,9 +386,9 @@ export async function recordVideo({
     if (recorder.state !== "inactive") watch = requestAnimationFrame(onFrame);
   };
   video.addEventListener("timeupdate", check);
-  video.addEventListener("ended", stop, { once: true });
+  video.addEventListener("ended", check);
   signal.addEventListener("abort", stop, { once: true });
-  const safety = setTimeout(stop, (span / rate) * 1000 + 3000);
+  const safety = setTimeout(stop, total * 1000 + 3000);
 
   try {
     recorder.start(250);
@@ -377,7 +413,7 @@ export async function recordVideo({
     clearTimeout(safety);
     cancelAnimationFrame(watch);
     video.removeEventListener("timeupdate", check);
-    video.removeEventListener("ended", stop);
+    video.removeEventListener("ended", check);
     signal.removeEventListener("abort", stop);
     for (const track of stream.getTracks()) track.stop();
     graph?.close();

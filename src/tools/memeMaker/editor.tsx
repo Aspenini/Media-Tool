@@ -41,6 +41,8 @@ export interface EditorState {
   audioVolume: number;
   /** Mute the clip's own audio while a soundtrack is attached. */
   replaceAudio: boolean;
+  /** Repeat the picture until a longer soundtrack ends. Not persisted. */
+  loopVideo: boolean;
   /** Fake-4K grade: sharper, more saturated, and (on video) smoother. */
   goldfish: boolean;
   /** User mute for the preview. Starts muted so a clip can autoplay. */
@@ -68,6 +70,7 @@ export type EditorAction =
   | { type: 'audioKeepPitch'; keepPitch: boolean }
   | { type: 'audioVolume'; volume: number }
   | { type: 'replaceAudio'; replaceAudio: boolean }
+  | { type: 'loopVideo'; loopVideo: boolean }
   | { type: 'goldfish'; goldfish: boolean }
   | { type: 'previewMuted'; previewMuted: boolean }
   | { type: 'placement'; placement: Placement }
@@ -125,6 +128,7 @@ const DEFAULT_STATE: EditorState = {
   audioKeepPitch: true,
   audioVolume: 1,
   replaceAudio: true,
+  loopVideo: false,
   goldfish: false,
   previewMuted: true,
   placement: 'overlay',
@@ -168,6 +172,7 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
         audioKeepPitch: true,
         audioVolume: has && had ? state.audioVolume : 1,
         replaceAudio: has && had ? state.replaceAudio : true,
+        loopVideo: has && had ? state.loopVideo : false,
       };
     }
     case 'audioTrim':
@@ -180,6 +185,8 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
       return { ...state, audioVolume: clampUnit(action.volume, 1) };
     case 'replaceAudio':
       return { ...state, replaceAudio: action.replaceAudio };
+    case 'loopVideo':
+      return { ...state, loopVideo: action.loopVideo };
     case 'goldfish':
       return { ...state, goldfish: action.goldfish };
     case 'previewMuted':

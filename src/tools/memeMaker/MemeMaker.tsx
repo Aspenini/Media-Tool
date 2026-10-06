@@ -35,13 +35,14 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import CropRoundedIcon from '@mui/icons-material/CropRounded';
 import HighQualityRoundedIcon from '@mui/icons-material/HighQualityRounded';
+import RepeatRoundedIcon from '@mui/icons-material/RepeatRounded';
 import { useIncomingFiles } from '../../components/FileBridge';
 import { FileButton, FileDropZone } from '../../components/FileDropZone';
 import { Panel, PanelSection, Stage, StageDock, ToolIntro, Workbench } from '../../components/Workbench';
 import { ExportFooter } from '../../components/ExportFooter';
 import { ChoiceCard, ColorField, Segmented, SliderField, SwitchRow, type SegmentOption } from '../../components/controls';
 import { TrimTimeline } from '../../components/TrimTimeline';
-import { audioSpan, outputDuration, soundtrackSync } from '../../lib/meme/audio.ts';
+import { audioSpan, loopExtends, outputDuration, soundtrackSync, videoPassCount, videoWrapped } from '../../lib/meme/audio.ts';
 import { cropPixels, dragCrop, fitAspect, FULL_CROP, isFullCrop, type CropHandle } from '../../lib/meme/crop.ts';
 import { trimSpan } from '../../lib/meme/media.ts';
 import { clampRange, formatTimecode } from '../../lib/videoTrim';
@@ -50,7 +51,7 @@ import { FONTS } from '../../lib/meme/fonts.ts';
 import { renderScene, sameFrame, type Frame, type Scene } from '../../lib/meme/render.ts';
 import type { CaptionSlot, Placement, Rect, TextAlign, TextStyle, Trim } from '../../lib/meme/types.ts';
 import { MONO_FONT } from '../../theme';
-import { cropRatio, DEFAULT_OFFSETS, EditorProvider, useEditor, type CropAspect } from './editor';
+import { cropRatio, DEFAULT_OFFSETS, EditorProvider, useEditor, type CropAspect, type EditorState } from './editor';
 
 const MEDIA_ACCEPT = 'image/*,video/*';
 const AUDIO_ACCEPT = 'audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus,.weba';
@@ -219,6 +220,13 @@ function useSoundtrack() {
     let raf = 0;
     let lastVideoTime = video.currentTime;
     let nextPlay = 0;
+    let loops = 0;
+    let timingSig = '';
+    // Set when we ourselves seek back to the in-point, so the landing frame isn't counted again.
+    let heldEnd = false;
+    // Set when the piece restarts, so the seek back to the in-point isn't counted as a pass.
+    let suppressWrap = false;
+    let suppressWait = 0;
 
     const tick = () => {
       const current = params.current;
@@ -239,21 +247,92 @@ function useSoundtrack() {
       if (sound.volume !== current.audioVolume) sound.volume = current.audioVolume;
       if (sound.muted !== current.previewMuted) sound.muted = current.previewMuted;
 
-      const moved = Math.abs(video.currentTime - lastVideoTime) > 0.0005;
-      lastVideoTime = video.currentTime;
+      const t = video.currentTime;
+      // Captured before this tick seeks. A seek we start below would otherwise look like a pause and cut the soundtrack.
+      const paused = video.paused || video.seeking;
+      const moved = Math.abs(t - lastVideoTime) > 0.0005;
       const vSpan = current.media?.kind === 'video' ? trimSpan(current.media, current.trim) : trimSpan(media, current.trim);
       const aSpan = audioSpan(track.duration, current.audioTrim);
+      const videoOut = vSpan ? outputDuration(vSpan.start, vSpan.end, current.speed) : 0;
+      const audioOut = outputDuration(aSpan.start, aSpan.end, current.audioSpeed);
+      const looping = current.loopVideo && loopExtends(videoOut, audioOut);
+      const sig = `${current.loopVideo}|${current.speed}|${current.audioSpeed}|${vSpan?.start ?? ''}|${vSpan?.end ?? ''}|${aSpan.start}|${aSpan.end}`;
+      let forceMoved = false;
+      if (sig !== timingSig) {
+        timingSig = sig;
+        loops = 0;
+        heldEnd = false;
+        suppressWrap = false;
+        lastVideoTime = t;
+        forceMoved = true;
+      }
+
+      let syncTime = t;
+      if (!forceMoved && looping && vSpan) {
+        if (suppressWrap) {
+          // Hold the soundtrack on the in-point while the picture seeks back there.
+          syncTime = vSpan.start;
+          lastVideoTime = t;
+          const nearStart = Math.abs(t - vSpan.start) <= 0.2;
+          if ((nearStart && !video.seeking) || ++suppressWait > 15) {
+            suppressWrap = false;
+            suppressWait = 0;
+          }
+        } else {
+          if (t < vSpan.end - 0.05) heldEnd = false;
+          const hitEnd = !video.paused && !video.seeking && !heldEnd && t >= vSpan.end - 0.001;
+          const wrapped = videoWrapped({
+            previous: lastVideoTime,
+            current: t,
+            start: vSpan.start,
+            end: vSpan.end,
+            paused: video.paused,
+          });
+          if (hitEnd) {
+            // Count the pass here and report the in-point, so the playhead still sitting
+            // on the out-point doesn't add the span a second time.
+            loops += 1;
+            syncTime = vSpan.start;
+            lastVideoTime = vSpan.start;
+            heldEnd = true;
+            if (Math.abs(t - vSpan.start) > 0.01) video.currentTime = vSpan.start;
+          } else if (wrapped) {
+            loops += 1;
+            lastVideoTime = t;
+          } else if (!video.seeking && Math.abs(t - lastVideoTime) > 0.35) {
+            loops = 0;
+            lastVideoTime = t;
+          } else if (!video.seeking) {
+            lastVideoTime = t;
+          }
+        }
+      } else {
+        if (!looping) loops = 0;
+        lastVideoTime = t;
+      }
+
       const sync = soundtrackSync({
-        videoPaused: video.paused || video.seeking,
-        videoMoved: moved,
-        videoTime: video.currentTime,
+        videoPaused: paused,
+        videoMoved: forceMoved || moved,
+        videoTime: syncTime,
         videoStart: vSpan?.start ?? 0,
         videoSpeed: current.speed,
         audioTime: sound.currentTime,
         audioStart: aSpan.start,
         audioEnd: aSpan.end,
         audioSpeed: current.audioSpeed,
+        videoLoops: loops,
+        videoOut,
+        loopVideo: current.loopVideo,
       });
+      if (sync.restart && vSpan) {
+        loops = 0;
+        heldEnd = false;
+        suppressWrap = true;
+        suppressWait = 0;
+        lastVideoTime = vSpan.start;
+        if (Math.abs(video.currentTime - vSpan.start) > 0.04) video.currentTime = vSpan.start;
+      }
       if (sync.seek !== null && !sound.seeking) sound.currentTime = sync.seek;
       if (sync.pause) {
         if (!sound.paused) sound.pause();
@@ -476,6 +555,7 @@ function SoundtrackTimeline({
   trim,
   speed,
   videoHeard,
+  loopVideo,
   busy,
   onScrub,
   onChangeRange,
@@ -485,6 +565,7 @@ function SoundtrackTimeline({
   trim: Trim | null;
   speed: number;
   videoHeard: number | null;
+  loopVideo: boolean;
   busy: boolean;
   onScrub: () => void;
   onChangeRange: (start: number, end: number) => void;
@@ -518,7 +599,9 @@ function SoundtrackTimeline({
         {tail > 0
           ? `Starts with the clip, then silence for the last ${formatTimecode(tail)}.`
           : overrun > 0
-            ? `Starts with the clip. The last ${formatTimecode(overrun)} sits past the end.`
+            ? loopVideo
+              ? 'Starts with the clip and keeps going while the picture repeats.'
+              : `Starts with the clip. The last ${formatTimecode(overrun)} sits past the end.`
             : 'Starts with the clip.'}
       </Typography>
     </>
@@ -527,7 +610,7 @@ function SoundtrackTimeline({
 
 function SoundtrackSection() {
   const { state, dispatch, busy, addAudioFile, clearAudio } = useEditor();
-  const { media, audio, audioSpeed, audioKeepPitch, audioVolume, replaceAudio, previewMuted } = state;
+  const { media, audio, audioSpeed, audioKeepPitch, audioVolume, replaceAudio, loopVideo, previewMuted } = state;
   const element = audio?.element ?? null;
   if (!media || media.kind !== 'video') return null;
 
@@ -549,6 +632,16 @@ function SoundtrackSection() {
   const trimmed = state.audioTrim !== null && (span.start > 0.001 || span.end < audio.duration - 0.001);
   const videoSpan = trimSpan(media, state.trim);
   const videoHeard = videoSpan ? outputDuration(videoSpan.start, videoSpan.end, state.speed) : null;
+  const audioHeard = outputDuration(span.start, span.end, audioSpeed);
+  const extendsClip = videoHeard !== null && loopExtends(videoHeard, audioHeard);
+  const passes = videoHeard !== null ? videoPassCount(videoHeard, audioHeard) : 1;
+  const loopCaption = !loopVideo
+    ? extendsClip
+      ? `Turn this on and the picture repeats to cover the extra ${formatTimecode(audioHeard - (videoHeard ?? 0))}.`
+      : 'Repeats the picture for as long as the soundtrack plays.'
+    : extendsClip
+      ? `On — the picture plays ${passes} times, then both start over.`
+      : 'On — the soundtrack fits in one pass.';
   const pauseClip = () => {
     if (media.source instanceof HTMLVideoElement) media.source.pause();
   };
@@ -582,6 +675,7 @@ function SoundtrackSection() {
         trim={state.audioTrim}
         speed={audioSpeed}
         videoHeard={videoHeard}
+        loopVideo={loopVideo && extendsClip}
         busy={busy}
         onScrub={pauseClip}
         onChangeRange={(start, end) => {
@@ -593,6 +687,19 @@ function SoundtrackSection() {
           element.currentTime = Math.min(Math.max(0, edge), audio.duration);
         }}
       />
+      <Button
+        fullWidth
+        size="large"
+        variant={loopVideo ? 'contained' : 'outlined'}
+        startIcon={<RepeatRoundedIcon />}
+        onClick={() => dispatch({ type: 'loopVideo', loopVideo: !loopVideo })}
+        aria-pressed={loopVideo}
+      >
+        Loop video until audio finishes
+      </Button>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: -0.75 }}>
+        {loopCaption}
+      </Typography>
       <SliderField
         label="Speed"
         aria-label="Soundtrack speed"
@@ -1159,6 +1266,19 @@ function CaptionHandle({
   );
 }
 
+function videoExportNote(state: EditorState): string {
+  const media = state.media?.kind === 'video' ? state.media : null;
+  const span = media ? trimSpan(media, state.trim) : null;
+  const videoOut = span ? outputDuration(span.start, span.end, state.speed) : 0;
+  const soundtrack = state.audio ? audioSpan(state.audio.duration, state.audioTrim) : null;
+  const audioOut = soundtrack ? outputDuration(soundtrack.start, soundtrack.end, state.audioSpeed) : 0;
+  const looping = Boolean(state.audio) && state.loopVideo && loopExtends(videoOut, audioOut);
+  const speed = state.speed === 1 ? '' : ` at ${state.speed}×`;
+  const gold = state.goldfish ? ' Appeal to goldfish makes this pass heavier.' : '';
+  if (looping) return `The clip repeats${speed} until the soundtrack ends.${gold} Keep this tab in front.`;
+  return `The clip plays through once${speed}${state.audio ? ' with your soundtrack' : ''}${state.goldfish ? '. Appeal to goldfish makes this pass heavier' : ''}. Keep this tab in front.`;
+}
+
 function ExportOverlay({ kind, progress }: { kind: 'video' | 'gif'; progress: number }) {
   const { cancelExport, state } = useEditor();
   const gif = kind === 'gif';
@@ -1181,9 +1301,7 @@ function ExportOverlay({ kind, progress }: { kind: 'video' | 'gif'; progress: nu
         </Box>
         <LinearProgress variant="determinate" value={progress * 100} aria-label="Export progress" />
         <Typography variant="body2" color="text.secondary">
-          {gif
-            ? 'Sampling frames at a shareable size. Stay on this tab.'
-            : `The clip plays through once${state.speed === 1 ? '' : ` at ${state.speed}×`}${state.audio ? ' with your soundtrack' : ''}${state.goldfish ? '. Appeal to goldfish makes this pass heavier' : ''}. Keep this tab in front.`}
+          {gif ? 'Sampling frames at a shareable size. Stay on this tab.' : videoExportNote(state)}
         </Typography>
         <Button variant="outlined" size="small" onClick={cancelExport} sx={{ alignSelf: 'flex-start' }}>
           Cancel

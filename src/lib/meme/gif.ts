@@ -1,4 +1,5 @@
 import { runOffThread } from "../offThread.ts";
+import { sourceTimeAt } from "./audio.ts";
 import { renderScene, type Scene } from "./render.ts";
 
 /** Longest edge for a still GIF. Video is smaller so the file stays shareable. */
@@ -391,6 +392,8 @@ export interface RecordGifOptions {
   end?: number;
   /** Playback rate; each GIF frame advances `speed / GIF_FPS` seconds of source. */
   speed?: number;
+  /** Output seconds to fill by repeating the clip, when a soundtrack runs longer. */
+  coverSeconds?: number;
   signal: AbortSignal;
   onProgress: (progress: number) => void;
 }
@@ -417,15 +420,18 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
  * Seeks through the clip, paints each sampled frame with captions, then encodes
  * a dithered, downscaled GIF. Resolves with the blob, or null if aborted.
  */
-export async function recordGif({ scene, video, start = 0, end, speed = 1, signal, onProgress }: RecordGifOptions): Promise<{ blob: Blob; truncated: boolean } | null> {
+export async function recordGif({ scene, video, start = 0, end, speed = 1, coverSeconds, signal, onProgress }: RecordGifOptions): Promise<{ blob: Blob; truncated: boolean } | null> {
   const rate = Number.isFinite(speed) && speed > 0 ? speed : 1;
   const raw = video.duration;
   const clipEnd = end ?? (Number.isFinite(raw) && raw > 0 ? raw : start + GIF_MAX_DURATION * rate);
   const sourceSpan = Math.max(0.1, clipEnd - start);
   // Output seconds: the cap applies to how long the GIF plays, not how much source it covers.
   const duration = sourceSpan / rate;
-  const truncated = duration > GIF_MAX_DURATION + 0.05;
-  const clip = Math.min(duration, GIF_MAX_DURATION);
+  const cover = typeof coverSeconds === "number" && Number.isFinite(coverSeconds) ? coverSeconds : duration;
+  const playFor = Math.max(duration, cover);
+  const truncated = playFor > GIF_MAX_DURATION + 0.05;
+  const clip = Math.min(playFor, GIF_MAX_DURATION);
+  const looping = playFor > duration + 0.05;
   const delayCs = Math.max(2, Math.round(100 / GIF_FPS));
   const fps = 100 / delayCs;
   const frameCount = Math.max(1, Math.round(clip * fps));
@@ -452,7 +458,7 @@ export async function recordGif({ scene, video, start = 0, end, speed = 1, signa
 
     for (let i = 1; i < frameCount; i++) {
       if (signal.aborted) return null;
-      const t = start + Math.min((i / fps) * rate, sourceSpan - 0.001);
+      const t = sourceTimeAt(i / fps, start, clipEnd, rate, looping);
       await seekVideo(video, t);
       if (signal.aborted) return null;
       renderScene(work, ctx, scene);
