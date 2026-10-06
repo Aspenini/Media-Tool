@@ -61,7 +61,10 @@ export interface RecordOptions {
   speed?: number;
   /** Keep the video element's pitch at rates other than 1×. */
   keepPitch?: boolean;
-  /** Canvas capture rate. Higher when motion smoothing needs the extra frames. */
+  /**
+   * Cap on the canvas capture rate. Left unset, every repaint is captured, so a stage that
+   * paints once per video frame records each frame exactly once.
+   */
   fps?: number;
   soundtrack?: RecordSoundtrack;
   /** 0–1, reported as the clip plays through. */
@@ -215,7 +218,7 @@ export async function recordVideo({
   end,
   speed = 1,
   keepPitch = true,
-  fps = 30,
+  fps,
   soundtrack,
   onProgress,
   signal,
@@ -223,8 +226,10 @@ export async function recordVideo({
   if (!canRecordVideo()) throw new Error("This browser can't record canvas video. Try Chrome, Edge, or Firefox.");
 
   const mimeType = pickRecorderMime();
-  const captureFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
-  const stream = new MediaStream(canvas.captureStream(captureFps).getVideoTracks());
+  // A fixed capture rate resamples the repaints on its own clock, which repeats some
+  // frames and drops others. Capturing on change keeps the clip's own cadence.
+  const capture = fps !== undefined && Number.isFinite(fps) && fps > 0 ? canvas.captureStream(fps) : canvas.captureStream();
+  const stream = new MediaStream(capture.getVideoTracks());
   // Built in the click turn, before any await, so the context is allowed to run.
   const mixCtx = soundtrack ? new (getAudioContextClass())() : null;
   if (mixCtx?.state === "suspended") void mixCtx.resume();
@@ -341,6 +346,13 @@ export async function recordVideo({
   // still sitting on the out-point so the soundtrack clock doesn't jump ahead a pass.
   let loops = 0;
   let wrapping = false;
+  // Each report re-renders the editor; per-frame reports cost the stage its own repaints.
+  let reported = -1;
+  const report = (progress: number) => {
+    if (progress - reported < 0.005 && progress < 1) return;
+    reported = progress;
+    onProgress(progress);
+  };
   const outputNow = () => {
     if (wrapping) return loops * videoOut;
     const into = Math.min(videoOut, Math.max(0, (video.currentTime - start) / rate));
@@ -349,7 +361,7 @@ export async function recordVideo({
   const check = () => {
     if (recorder.state === "inactive") return;
     const outputT = outputNow();
-    onProgress(Math.min(1, Math.max(0, outputT / total)));
+    report(Math.min(1, Math.max(0, outputT / total)));
     if (exportAudio && graph?.mode === "element" && soundtrack) {
       const audioRate = Number.isFinite(soundtrack.speed) && soundtrack.speed > 0 ? soundtrack.speed : 1;
       const expected = soundtrack.start + outputT * audioRate;

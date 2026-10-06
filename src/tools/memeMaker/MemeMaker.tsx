@@ -483,7 +483,8 @@ function TrimSection() {
   const { state, dispatch, busy } = useEditor();
   const media = state.media;
   const video = media?.source instanceof HTMLVideoElement ? media.source : null;
-  const currentTime = useVideoTime(video);
+  // Hold the playhead during export: re-rendering the timeline every frame starves the stage.
+  const currentTime = useVideoTime(busy ? null : video);
   const span = media && trimSpan(media, state.trim);
   if (!media || !video || !span) return null;
   const trimmed = state.trim !== null && (span.start > 0.001 || span.end < media.duration - 0.001);
@@ -971,9 +972,35 @@ function Preview() {
   // Stills repaint only when something they depend on changes.
   useLayoutEffect(draw, [draw, media, crop, cropping, placement, captions, offsets, style, atlas, fontsVersion, state.goldfish]);
 
-  // Video repaints every display frame (which is also what the recorder captures).
+  // Video repaints once per presented frame, and the recorder captures each repaint.
+  // Painting on every display refresh instead beats against the clip's frame rate
+  // and the capture rate, so exports repeat and drop frames unevenly.
   useEffect(() => {
     if (media?.kind !== 'video') return;
+    const video = media.source as HTMLVideoElement;
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      let lastFrame = -Infinity;
+      let paintedTime = Number.NaN;
+      const paint = () => {
+        paintedTime = video.currentTime;
+        draw();
+      };
+      let handle = video.requestVideoFrameCallback(function onVideoFrame(now) {
+        lastFrame = now;
+        paint();
+        handle = video.requestVideoFrameCallback(onVideoFrame);
+      });
+      // The source element isn't in the DOM, and not every browser presents frames for it.
+      // Catch moves the callback missed (or never sends), without repainting a still frame.
+      let watch = requestAnimationFrame(function tick(now) {
+        if (now - lastFrame > 200 && video.currentTime !== paintedTime) paint();
+        watch = requestAnimationFrame(tick);
+      });
+      return () => {
+        video.cancelVideoFrameCallback(handle);
+        cancelAnimationFrame(watch);
+      };
+    }
     let handle = requestAnimationFrame(function loop() {
       draw();
       handle = requestAnimationFrame(loop);

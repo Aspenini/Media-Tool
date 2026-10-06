@@ -146,7 +146,6 @@ export function useEditorActions(options: {
       audioVolume,
       replaceAudio,
       loopVideo,
-      goldfish,
       exporting,
     } = stateRef.current;
     const canvas = canvasRef.current;
@@ -173,7 +172,6 @@ export function useEditorActions(options: {
         ...trimSpan(media, trim),
         speed,
         keepPitch,
-        fps: goldfish ? 60 : 30,
         soundtrack: audio
           ? {
               url: audio.url,
